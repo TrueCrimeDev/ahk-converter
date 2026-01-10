@@ -33,6 +33,8 @@ Welcome to the comprehensive documentation for the AHKv2 Toolbox extension.
 - [Implementation Summary](../IMPLEMENTATION_SUMMARY.md) ⭐ **NEW in v0.4.3**
   - Auto-Add #Include technical details
   - Quality metrics and testing
+- [UI Windows & Views](WINDOWS.md)
+  - Map of all extension views and panels
 - [Parameter Extraction Guide](PARAMETER_EXTRACTION_GUIDE.md)
   - Parameter detection algorithm
   - Default value classification

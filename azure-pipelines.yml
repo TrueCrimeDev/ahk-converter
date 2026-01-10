@@ -1,0 +1,62 @@
+trigger:
+  tags:
+    include:
+      - 'v*'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: nodeVersion
+    value: '20.x'
+
+stages:
+  - stage: Build
+    displayName: 'Build Extension'
+    jobs:
+      - job: BuildJob
+        displayName: 'Build and Package'
+        steps:
+          - task: NodeTool@0
+            displayName: 'Install Node.js'
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: npm ci
+            displayName: 'Install dependencies'
+
+          - script: npm run compile
+            displayName: 'Compile TypeScript'
+
+          - script: npx vsce package
+            displayName: 'Package extension'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish VSIX artifact'
+            inputs:
+              targetPath: '$(Build.SourcesDirectory)/*.vsix'
+              artifactName: 'vsix'
+
+  - stage: Publish
+    displayName: 'Publish to Marketplace'
+    dependsOn: Build
+    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
+    jobs:
+      - job: PublishJob
+        displayName: 'Publish Extension'
+        steps:
+          - task: NodeTool@0
+            displayName: 'Install Node.js'
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: npm ci
+            displayName: 'Install dependencies'
+
+          - script: npm run compile
+            displayName: 'Compile TypeScript'
+
+          - script: npx vsce publish --skip-duplicate
+            displayName: 'Publish to VS Code Marketplace'
+            env:
+              VSCE_PAT: $(VSCE_PAT)
