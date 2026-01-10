@@ -45,18 +45,20 @@ stages:
       - job: PublishJob
         displayName: 'Publish Extension'
         steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download VSIX artifact'
+            inputs:
+              artifact: 'vsix'
+              path: '$(Pipeline.Workspace)/vsix'
+
           - task: NodeTool@0
             displayName: 'Install Node.js'
             inputs:
               versionSpec: '$(nodeVersion)'
 
-          - script: npm ci
-            displayName: 'Install dependencies'
+          - script: npm install -g @vscode/vsce
+            displayName: 'Install vsce globally'
 
-          - script: npm run compile
-            displayName: 'Compile TypeScript'
-
-          - script: npx vsce publish --skip-duplicate
+          - script: vsce publish --packagePath $(Pipeline.Workspace)/vsix/extension.vsix --pat $(VSCE_PAT) --skip-duplicate
             displayName: 'Publish to VS Code Marketplace'
-            env:
-              VSCE_PAT: $(VSCE_PAT)
+
