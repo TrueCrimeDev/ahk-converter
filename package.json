@@ -4,7 +4,7 @@
   "icon": "media/converter.png",
   "description": "Convert AutoHotkey v1 scripts to v2 using the community converter and AutoHotkey v2.",
   "publisher": "TrueCrimeAudit",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "engines": {
     "vscode": "^1.84.0"
   },
