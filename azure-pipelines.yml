@@ -40,7 +40,7 @@ stages:
   - stage: Publish
     displayName: 'Publish to Marketplace'
     dependsOn: Build
-    condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/v'))
+    condition: and(succeeded(), or(startsWith(variables['Build.SourceBranch'], 'refs/tags/v'), eq(variables['Build.Reason'], 'Manual')))
     jobs:
       - job: PublishJob
         displayName: 'Publish Extension'
