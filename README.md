@@ -816,6 +816,39 @@ Git for version control of converted files
 
 Build tools for automated conversion workflows
 
+## Development & Publishing
+
+### Building Locally
+
+```bash
+npm install          # Install dependencies
+npm run compile      # Compile TypeScript
+npm run package      # Create VSIX package
+```
+
+### Publishing to VS Code Marketplace
+
+The extension uses GitHub Actions for automated publishing. To publish:
+
+1. **Configure VSCE_PAT secret** in GitHub repository settings:
+   - Go to [Azure DevOps](https://dev.azure.com/) → User Settings → Personal Access Tokens
+   - Create a token with **Marketplace (Manage)** scope
+   - Add as `VSCE_PAT` in GitHub repo → Settings → Secrets → Actions
+
+2. **Publish via git tag**:
+   ```bash
+   # Update version in package.json
+   npm version patch  # or minor/major
+   git push origin main --tags
+   ```
+   GitHub Actions will automatically publish on tag push.
+
+3. **Manual publish** (requires local VSCE_PAT):
+   ```bash
+   export VSCE_PAT=your-token
+   npm run publish
+   ```
+
 ## Contributing
 
 Contributions are welcome! Please see CONTRIBUTING.md for guidelines.

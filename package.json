@@ -9,8 +9,18 @@
     "vscode": "^1.84.0"
   },
   "categories": [
-    "Other"
+    "Programming Languages",
+    "Formatters",
+    "Linters"
   ],
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
+  "homepage": "https://github.com/012090120901209/ahk-converter#readme",
+  "bugs": {
+    "url": "https://github.com/012090120901209/ahk-converter/issues"
+  },
   "activationEvents": [
     "onLanguage:ahk",
     "onLanguage:ahk2",
@@ -193,11 +203,6 @@
         "category": "AHK Converter"
       },
       {
-        "command": "ahkv2Toolbox.openLibraryMetadataPage",
-        "title": "Open Library Metadata Page",
-        "category": "AHKv2 Toolbox"
-      },
-      {
         "command": "ahkv2Toolbox.generateMetadataJsonComment",
         "title": "Generate Library Metadata JSON",
         "category": "AHKv2 Toolbox"
@@ -295,12 +300,6 @@
         "title": "Open Settings",
         "category": "AHKv2 Toolbox",
         "icon": "$(gear)"
-      },
-      {
-        "command": "ahkPackageManager.editMetadata",
-        "title": "Edit Metadata",
-        "category": "Dependency Manager",
-        "icon": "$(edit)"
       },
       {
         "command": "ahkPackageManager.generateJSDocHeader",
@@ -498,24 +497,15 @@
           "group": "navigation"
         },
         {
-          "command": "ahkPackageManager.editMetadata",
-          "when": "view == ahkPackageManager && viewItem == installedPackage",
-          "group": "context@2"
-        },
-        {
           "command": "ahkPackageManager.generateJSDocHeader",
           "when": "view == ahkPackageManager && viewItem == installedPackage",
-          "group": "context@3"
+          "group": "context@2"
         }
       ],
       "commandPalette": [
         {
           "command": "ahkv2Toolbox.openSettings",
           "when": "true"
-        },
-        {
-          "command": "ahkPackageManager.editMetadata",
-          "when": "false"
         },
         {
           "command": "ahkPackageManager.generateJSDocHeader",

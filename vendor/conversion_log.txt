@@ -19,3 +19,5 @@ Conversion complete: C:\Users\uphol\AppData\Local\Temp\ahkconv-Yut2bp\input.ahk 
 Conversion complete: C:\Users\uphol\AppData\Local\Temp\ahkconv-96xFyT\input.ahk -> C:\Users\uphol\AppData\Local\Temp\ahkconv-96xFyT\input_newV2.ahk
 Conversion complete: C:\Users\uphol\AppData\Local\Temp\ahkconv-fnKdQW\input.ahk -> C:\Users\uphol\AppData\Local\Temp\ahkconv-fnKdQW\input_newV2.ahk
 Conversion complete: C:\Users\uphol\AppData\Local\Temp\ahkconv-SSx9EQ\input.ahk -> C:\Users\uphol\AppData\Local\Temp\ahkconv-SSx9EQ\input_newV2.ahk
+Conversion complete: C:\Users\uphol\AppData\Local\Temp\ahkconv-p6HI5V\input.ahk -> C:\Users\uphol\AppData\Local\Temp\ahkconv-p6HI5V\input_newV2.ahk
+Conversion complete: C:\Users\uphol\AppData\Local\Temp\ahkconv-aXpKpr\input.ahk -> C:\Users\uphol\AppData\Local\Temp\ahkconv-aXpKpr\input_newV2.ahk

@@ -19,7 +19,6 @@ import { AHKLSPIntegration } from './lspIntegration';
 import { DependencyTreeProvider } from './dependencyTreeProvider';
 import { PackageManagerProvider } from './packageManagerProvider';
 import { SettingsWebviewProvider } from './settingsWebviewProvider';
-import { MetadataEditorProvider } from './metadataEditorProvider';
 import { registerAHKChatParticipant } from './chatParticipant';
 import { registerLibraryAttributionParticipant } from './libraryAttributionParticipant';
 import { ImportManager } from './import';
@@ -1091,11 +1090,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
           await packageManagerProvider.openRepository(packageItem);
         }
       }),
-      vscode.commands.registerCommand('ahkPackageManager.editMetadata', async (packageItem: { packagePath: string }) => {
-        if (packageItem?.packagePath?.endsWith('.ahk')) {
-          await MetadataEditorProvider.show(ctx, packageItem.packagePath);
-        }
-      }),
       vscode.commands.registerCommand('ahkPackageManager.generateJSDocHeader', async (packageItem) => {
         if (packageItem && packageItem.packagePath.endsWith('.ahk')) {
           vscode.window.showInformationMessage(
@@ -1231,25 +1225,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     new MetadataHoverProvider()
   );
 
-  const openMetadataPageCommand = vscode.commands.registerCommand(
-    'ahkv2Toolbox.openLibraryMetadataPage',
-    async (target?: vscode.Uri) => {
-      const uri = target ?? vscode.window.activeTextEditor?.document.uri;
-      if (!uri) {
-        vscode.window.showWarningMessage('Open a library file to view its metadata.');
-        return;
-      }
-
-      try {
-        await MetadataEditorProvider.show(ctx, uri.fsPath);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        vscode.window.showErrorMessage(`Unable to open library metadata: ${message}`);
-      }
-    }
-  );
-
-  ctx.subscriptions.push(metadataValidation, metadataHover, openMetadataPageCommand);
+  ctx.subscriptions.push(metadataValidation, metadataHover);
     console.log('Metadata Validation Provider registered');
   } catch (error) {
     console.log('Metadata Validation Provider not initialized:', error);

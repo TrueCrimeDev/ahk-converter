@@ -20,12 +20,6 @@ export class MetadataHoverProvider implements vscode.HoverProvider {
     const hoverMarkdown = new vscode.MarkdownString(undefined, true);
     hoverMarkdown.isTrusted = true;
 
-    const openMetadataLink = this.buildCommandLink(
-      'ahkv2Toolbox.openLibraryMetadataPage',
-      [document.uri],
-      'Open library metadata page'
-    );
-
     const openSettingsLink = this.buildCommandLink(
       'workbench.action.openSettings',
       ['ahkv2Toolbox.libraryAttribution.autoValidate'],
@@ -36,7 +30,6 @@ export class MetadataHoverProvider implements vscode.HoverProvider {
     hoverMarkdown.appendMarkdown(
       'This file lives inside a `Lib` folder, so the toolbox validates its metadata automatically.\n\n'
     );
-    hoverMarkdown.appendMarkdown(`${openMetadataLink} to review or edit metadata in the toolbox.\n\n`);
     hoverMarkdown.appendMarkdown(
       `${openSettingsLink} or add this file to the exclusion list via the quick fix menu if you want to silence the warning.`
     );

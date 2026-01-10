@@ -28,13 +28,13 @@ stages:
           - script: npm run compile
             displayName: 'Compile TypeScript'
 
-          - script: npx vsce package
+          - script: npx vsce package --out extension.vsix
             displayName: 'Package extension'
 
           - task: PublishPipelineArtifact@1
             displayName: 'Publish VSIX artifact'
             inputs:
-              targetPath: '$(Build.SourcesDirectory)/*.vsix'
+              targetPath: '$(Build.SourcesDirectory)/extension.vsix'
               artifactName: 'vsix'
 
   - stage: Publish

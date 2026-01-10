@@ -1,49 +1,20 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
-import * as path from 'path';
-import { MetadataEditorProvider } from './metadataEditorProvider';
 
 const toolboxLog = vscode.window.createOutputChannel('AHKv2 Toolbox Sidebar');
 
 /**
- * JSDoc metadata interface
+ * Library metadata from JSDoc comments
  */
-interface JSDocMetadata {
+interface LibraryMetadata {
   file?: string;
-  title?: string;
-  fileoverview?: string;
-  abstract?: string;
   description?: string;
-  module?: string;
   author?: string;
-  license?: string;
-  version?: string;
-  since?: string;
   date?: string;
-  homepage?: string;
+  version?: string;
+  license?: string;
   repository?: string;
-  link?: string[];
-  see?: string[];
-  keywords?: string;
-  category?: string;
-  'ahk-version'?: string;
   requires?: string[];
-  imports?: string[];
-  exports?: string[];
-  entrypoint?: string;
-  env?: string;
-  permissions?: string;
-  config?: string;
-  arguments?: string;
-  returns?: string;
-  sideEffects?: string;
-  examples?: string;
-  bugs?: string;
-  todo?: string[];
-  changelog?: string;
-  funding?: string;
-  maintainer?: string;
-  contributors?: string[];
   [key: string]: string | string[] | undefined;
 }
 
@@ -69,11 +40,9 @@ interface ToolboxSettingsMessage {
 
 const enum WebviewMessageType {
   ExecuteCommand = 'executeCommand',
-  EditActiveFileMetadata = 'editActiveFileMetadata',
-  ShowMetadataEditor = 'showMetadataEditor',
   ShowSettings = 'showSettings',
+  ShowEditForm = 'showEditForm',
   ShowMain = 'showMain',
-  SaveMetadata = 'saveMetadata',
   SaveSettings = 'saveSettings'
 }
 
@@ -81,22 +50,19 @@ interface WebviewMessage {
   type: WebviewMessageType | string;
   command?: string;
   args?: any[];
-  filePath?: string;
-  metadata?: JSDocMetadata;
   settings?: ToolboxSettingsMessage;
 }
 
 /**
  * Enhanced AHKv2 Toolbox sidebar webview provider
- * Supports multiple views: main toolbox, settings, metadata editor
+ * Supports multiple views: main toolbox, settings
  */
 export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'ahkv2Toolbox';
 
   private _view?: vscode.WebviewView;
   private pendingRoute?: 'main';
-  private currentView: 'main' | 'settings' | 'metadata' = 'main';
-  private currentFilePath?: string;
+  private currentView: 'main' | 'settings' | 'editForm' = 'main';
 
   constructor(
     private readonly _extensionContext: vscode.ExtensionContext,
@@ -143,21 +109,13 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
               await vscode.commands.executeCommand(data.command, ...(data.args || []));
             }
             break;
-          case 'editActiveFileMetadata':
-          case WebviewMessageType.EditActiveFileMetadata:
-            log.appendLine('[sidebar] handling editActiveFileMetadata');
-            await this.editActiveFileMetadata();
-            log.appendLine('[sidebar] editActiveFileMetadata returned');
-            break;
-          case 'showMetadataEditor':
-          case WebviewMessageType.ShowMetadataEditor:
-            if (data.filePath) {
-              await this.showMetadataEditor(data.filePath);
-            }
-            break;
           case 'showSettings':
           case WebviewMessageType.ShowSettings:
             await this.showSettings();
+            break;
+          case 'showEditForm':
+          case WebviewMessageType.ShowEditForm:
+            this.showEditForm();
             break;
           case 'showMain':
           case WebviewMessageType.ShowMain:
@@ -169,12 +127,6 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
             log.appendLine('[sidebar] recv back - calling showMainView');
             this.showMainView();
             log.appendLine('[sidebar] showMainView returned');
-            break;
-          case 'saveMetadata':
-          case WebviewMessageType.SaveMetadata:
-            if (data.filePath && data.metadata) {
-              await this.saveMetadata(data.filePath, data.metadata);
-            }
             break;
           case 'saveSettings':
           case WebviewMessageType.SaveSettings:
@@ -201,49 +153,6 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 
   private escapeAttribute(value: string): string {
     return this.escapeHtml(value).replace(/"/g, '&quot;');
-  }
-
-  /**
-   * Edit metadata for the currently active file
-   */
-  public async editActiveFileMetadata() {
-    toolboxLog.appendLine('[sidebar] editActiveFileMetadata called');
-    const activeEditor = vscode.window.activeTextEditor;
-
-    if (!activeEditor) {
-      toolboxLog.appendLine('[sidebar] no active editor');
-      vscode.window.showErrorMessage('No active file open. Please open an AHK file first.');
-      return;
-    }
-
-    const filePath = activeEditor.document.uri.fsPath;
-    toolboxLog.appendLine('[sidebar] filePath: ' + filePath);
-
-    // Check if it's an AHK file
-    if (!filePath.endsWith('.ahk') && !filePath.endsWith('.ahk2')) {
-      toolboxLog.appendLine('[sidebar] not an AHK file');
-      vscode.window.showWarningMessage('Please open an AutoHotkey (.ahk or .ahk2) file.');
-      return;
-    }
-
-    toolboxLog.appendLine('[sidebar] opening inline metadata editor');
-    await this.showMetadataEditor(filePath);
-    toolboxLog.appendLine('[sidebar] inline metadata editor shown');
-  }
-
-  /**
-   * Show metadata editor for a specific file
-   */
-  public async showMetadataEditor(filePath: string) {
-    if (!this._view) {
-      return;
-    }
-
-    this.currentView = 'metadata';
-    this.currentFilePath = filePath;
-
-    const metadata = await this.parseJSDoc(filePath);
-    this._view.webview.html = this.getMetadataEditorHtml(metadata, filePath);
   }
 
   /**
@@ -285,28 +194,42 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Show edit form view
+   */
+  public async showEditForm() {
+    if (!this._view) {
+      return;
+    }
+
+    const activeEditor = vscode.window.activeTextEditor;
+    let metadata: LibraryMetadata = {};
+    let filePath = '';
+
+    if (activeEditor) {
+      filePath = activeEditor.document.uri.fsPath;
+      if (filePath.endsWith('.ahk') || filePath.endsWith('.ahk2')) {
+        metadata = await this.parseJSDoc(filePath);
+        metadata.file = metadata.file || require('path').basename(filePath);
+      }
+    }
+
+    this.currentView = 'editForm';
+    this._view.webview.html = this.getEditFormHtml(metadata, filePath);
+  }
+
+  /**
    * Parse JSDoc header from AHK file
    */
-  private async parseJSDoc(filePath: string): Promise<JSDocMetadata> {
+  private async parseJSDoc(filePath: string): Promise<LibraryMetadata> {
     try {
-      // Check if file exists before trying to read it
-      try {
-        await fs.access(filePath);
-      } catch {
-        // File doesn't exist, return empty metadata silently
-        return {};
-      }
-
       const content = await fs.readFile(filePath, 'utf-8');
       const lines = content.split('\n');
 
-      const metadata: JSDocMetadata = {};
+      const metadata: LibraryMetadata = {};
       let inJSDoc = false;
       let currentTag: string | null = null;
-      let foundFileTag = false;
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
+      for (const line of lines) {
         const trimmed = line.trim();
 
         // Start of JSDoc block
@@ -316,15 +239,8 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
         }
 
         // End of JSDoc block
-        if (trimmed.endsWith('*/') || trimmed.endsWith('***/')) {
-          // If we found a @file tag, this is the file header - stop parsing
-          if (foundFileTag) {
-            break;
-          }
-          // Otherwise, reset and continue looking for file header
-          inJSDoc = false;
-          currentTag = null;
-          continue;
+        if (inJSDoc && (trimmed.endsWith('*/') || trimmed.endsWith('***/'))) {
+          break;
         }
 
         if (!inJSDoc) {
@@ -334,43 +250,26 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
         // Match JSDoc tag line: * @tagname: value or * @tagname value
         const tagMatch = trimmed.match(/^\*\s*@(\w+[-\w]*)\s*[:：]?\s*(.*)$/);
         if (tagMatch) {
-          const tag = tagMatch[1];
+          const tag = tagMatch[1].toLowerCase();
           const value = tagMatch[2].trim();
           currentTag = tag;
 
-          // Mark that we found the file header
-          if (tag === 'file') {
-            foundFileTag = true;
-          }
-
           // Handle array-type tags
-          if (['link', 'see', 'requires', 'imports', 'exports', 'todo', 'contributors'].includes(tag)) {
-            if (!metadata[tag]) {
-              metadata[tag] = [];
+          if (tag === 'requires') {
+            if (!metadata.requires) {
+              metadata.requires = [];
             }
             if (value) {
-              (metadata[tag] as string[]).push(value);
+              metadata.requires.push(value);
             }
           } else {
-            // Single-value tags
             metadata[tag] = value;
           }
         } else if (currentTag && trimmed.startsWith('*')) {
-          // Continuation line (multi-line description)
+          // Continuation line
           const continuationText = trimmed.replace(/^\*\s*/, '');
-
-          if (continuationText) {
-            // Append to existing tag value
-            if (Array.isArray(metadata[currentTag])) {
-              // For array tags, append to last item
-              const arr = metadata[currentTag] as string[];
-              if (arr.length > 0) {
-                arr[arr.length - 1] += ' ' + continuationText;
-              }
-            } else if (metadata[currentTag]) {
-              // For string tags, append with space or newline
-              metadata[currentTag] += ' ' + continuationText;
-            }
+          if (continuationText && metadata[currentTag]) {
+            metadata[currentTag] += ' ' + continuationText;
           }
         }
       }
@@ -380,108 +279,6 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       console.error('Failed to parse JSDoc:', error);
       return {};
     }
-  }
-
-  /**
-   * Save metadata back to file
-   */
-  private async saveMetadata(filePath: string, metadata: JSDocMetadata) {
-    try {
-      const content = await fs.readFile(filePath, 'utf-8');
-      const lines = content.split('\n');
-
-      let jsdocStart = -1;
-      let jsdocEnd = -1;
-
-      for (let i = 0; i < lines.length; i++) {
-        const trimmed = lines[i].trim();
-        if (trimmed.startsWith('/**') || trimmed.startsWith('/***')) {
-          jsdocStart = i;
-        }
-        if (jsdocStart !== -1 && (trimmed.endsWith('*/') || trimmed.endsWith('***/'))) {
-          jsdocEnd = i;
-          break;
-        }
-      }
-
-      const newJSDoc = this.generateJSDocHeader(metadata);
-
-      let newContent: string;
-      if (jsdocStart !== -1 && jsdocEnd !== -1) {
-        const before = lines.slice(0, jsdocStart);
-        const after = lines.slice(jsdocEnd + 1);
-        newContent = [...before, ...newJSDoc.split('\n'), ...after].join('\n');
-      } else {
-        newContent = newJSDoc + '\n\n' + content;
-      }
-
-      // Check if document is open in editor
-      const doc = vscode.workspace.textDocuments.find(d => d.fileName === filePath);
-
-      if (doc) {
-        // Document is open - edit through workspace API to handle dirty state
-        const edit = new vscode.WorkspaceEdit();
-        const fullRange = new vscode.Range(
-          doc.lineAt(0).range.start,
-          doc.lineAt(doc.lineCount - 1).range.end
-        );
-        edit.replace(doc.uri, fullRange, newContent);
-        await vscode.workspace.applyEdit(edit);
-        await doc.save();
-      } else {
-        // Document not open - write directly to disk
-        await fs.writeFile(filePath, newContent, 'utf-8');
-      }
-
-      vscode.window.showInformationMessage('Metadata saved successfully!');
-      this.showMainView();
-    } catch (error) {
-      vscode.window.showErrorMessage(`Failed to save metadata: ${error}`);
-    }
-  }
-
-  /**
-   * Generate JSDoc header from metadata
-   */
-  private generateJSDocHeader(metadata: JSDocMetadata): string {
-    const lines: string[] = [];
-    lines.push('************************************************************************');
-
-    const tagOrder = [
-      'file', 'title', 'fileoverview', 'abstract', 'description', 'module',
-      'author', 'license', 'version', 'since', 'date', 'homepage', 'repository',
-      'link', 'see', 'keywords', 'category', 'ahk-version', 'requires',
-      'imports', 'exports', 'entrypoint', 'env', 'permissions', 'config',
-      'arguments', 'returns', 'sideEffects', 'examples', 'bugs', 'todo',
-      'changelog', 'funding', 'maintainer', 'contributors'
-    ];
-
-    for (const tag of tagOrder) {
-      const value = metadata[tag];
-      if (value === undefined || value === null || value === '') {
-        continue;
-      }
-
-      if (Array.isArray(value)) {
-        if (value.length === 0) continue;
-        for (const item of value) {
-          lines.push(` * @${tag}: ${item}`);
-        }
-      } else {
-        const valueLines = String(value).split('\n');
-        if (valueLines.length === 1) {
-          lines.push(` * @${tag}: ${value}`);
-        } else {
-          lines.push(` * @${tag}: ${valueLines[0]}`);
-          for (let i = 1; i < valueLines.length; i++) {
-            lines.push(` * ${valueLines[i]}`);
-          }
-        }
-      }
-    }
-
-    lines.push(' ***********************************************************************/');
-    return lines.join('\n');
   }
 
   /**
@@ -858,7 +655,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
         <vscode-button appearance="secondary" id="updatePackages" title="Check for library updates">
           Update
         </vscode-button>
-        <vscode-button appearance="secondary" id="editFileMetadata" title="Edit library metadata">
+        <vscode-button appearance="secondary" id="editLibrary" title="Edit library metadata">
           Edit
         </vscode-button>
       </div>
@@ -908,10 +705,10 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       'convertReplace': { type: 'executeCommand', command: 'ahk.convertV1toV2.replace' },
       'convertBatch': { type: 'executeCommand', command: 'ahk.convertV1toV2.batch' },
       'extractMetadata': { type: 'executeCommand', command: 'ahk.extractFunctionMetadata' },
-      'editFileMetadata': { type: 'editActiveFileMetadata' },
       'viewDependencies': { type: 'executeCommand', command: 'workbench.view.extension.ahkv2-toolbox' },
       'installPackage': { type: 'executeCommand', command: 'ahkPackageManager.installPackage' },
       'updatePackages': { type: 'executeCommand', command: 'ahkPackageManager.updatePackage' },
+      'editLibrary': { type: 'showEditForm' },
       'updateHeader': { type: 'executeCommand', command: 'ahk.updateHeader' },
       'generateJSDoc': { type: 'executeCommand', command: 'ahkPackageManager.generateJSDocHeader' },
       'showImportsGuide': { type: 'executeCommand', command: 'ahkv2Toolbox.showImportsGuide' },
@@ -1582,49 +1379,46 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Get metadata editor HTML (continued in next part due to length)
+   * Get edit form HTML
    */
-  private getMetadataEditorHtml(metadata: JSDocMetadata, filePath: string): string {
-    const toolkitUri = this._view!.webview.asWebviewUri(
+  private getEditFormHtml(metadata: LibraryMetadata, filePath: string): string {
+    if (!this._view) {
+      return '';
+    }
+
+    const toolkitUri = this._view.webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js')
     );
 
-    const escapeAttr = (value?: string) => this.escapeAttribute(typeof value === 'string' ? value : '');
-    const escapeText = (value?: string) => this.escapeHtml(typeof value === 'string' ? value : '');
-    const escapeTextarea = (value?: string | string[]) => {
-      if (Array.isArray(value)) {
-        return this.escapeHtml(value.join('\n'));
-      }
-      return this.escapeHtml(typeof value === 'string' ? value : '');
-    };
-
-    const originalMetadataJson = JSON.stringify(metadata);
-    const filePathJson = JSON.stringify(filePath);
+    const escapeAttr = (value?: string) => this.escapeAttribute(value || '');
+    const escapeText = (value?: string) => this.escapeHtml(value || '');
+    const fileName = filePath ? require('path').basename(filePath) : 'No file open';
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Edit Metadata</title>
+  <title>Edit Library</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css">
   <script type="module" src="${toolkitUri}"></script>
   <style>
     * {
+      margin: 0;
+      padding: 0;
       box-sizing: border-box;
     }
 
     body {
       padding: 0;
       margin: 0;
-      color: var(--vscode-foreground);
       font-family: var(--vscode-font-family);
       font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
       background: var(--vscode-sideBar-background);
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
+      line-height: 1.5;
+      overflow-y: auto;
+      width: 100%;
     }
 
     .header {
@@ -1633,8 +1427,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
       display: flex;
       align-items: center;
-      gap: 4px;
-      flex-shrink: 0;
+      gap: 8px;
     }
 
     .header h2 {
@@ -1645,7 +1438,6 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       flex: 1;
     }
 
-    /* Back button (icon style) */
     .back-btn {
       width: 28px;
       height: 28px;
@@ -1667,53 +1459,124 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       background: rgba(255, 255, 255, 0.15);
     }
 
-    .back-btn:active {
-      background: rgba(255, 255, 255, 0.05);
+    .file-info {
+      padding: 8px 24px;
+      background: var(--vscode-editor-background);
+      border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
     }
 
-    /* Primary button (Save) */
-    .btn-primary {
+    .file-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+
+    .file-path {
+      font-size: 10px;
+      color: var(--vscode-descriptionForeground);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .form-container {
+      padding: 16px 24px;
+    }
+
+    .form-section {
+      margin-bottom: 16px;
+    }
+
+    .section-header {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #969696;
+      margin: 0 0 12px 0;
+    }
+
+    .form-field {
+      margin-bottom: 12px;
+    }
+
+    .form-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--vscode-foreground);
+    }
+
+    .form-field input,
+    .form-field textarea {
+      width: 100%;
+      padding: 6px 8px;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border, #3e3e42);
+      border-radius: 2px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+
+    .form-field textarea {
+      min-height: 60px;
+      resize: vertical;
+    }
+
+    .form-field input:focus,
+    .form-field textarea:focus {
+      outline: 1px solid var(--vscode-focusBorder);
+      border-color: var(--vscode-focusBorder);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .divider {
+      height: 1px;
+      background: #3c3c3c;
+      margin: 16px 0;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .button-group button {
       flex: 1;
       height: 32px;
       padding: 0 16px;
+      font-size: 13px;
+      font-family: inherit;
+      border-radius: 2px;
+      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .btn-primary {
       background: var(--vscode-button-background);
       color: var(--vscode-button-foreground);
       border: none;
-      border-radius: 2px;
-      font-size: 13px;
-      font-family: inherit;
-      transition: background 0.15s ease;
     }
 
     .btn-primary:hover {
       background: var(--vscode-button-hoverBackground);
     }
 
-    .btn-primary:active {
-      opacity: 0.9;
-    }
-
-    /* Secondary button (Cancel) */
     .btn-secondary {
-      flex: 1;
-      height: 32px;
-      padding: 0 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
       background: #2e2e2e;
       color: #cccccc;
       border: 1px solid #3c3c3c;
-      border-radius: 2px;
-      font-size: 13px;
-      font-family: inherit;
-      transition: background 0.15s ease, border-color 0.15s ease;
     }
 
     .btn-secondary:hover {
@@ -1721,349 +1584,107 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       border-color: #505050;
     }
 
-    .btn-secondary:active {
-      background: #242424;
-    }
-
-    .file-path {
-      font-size: 10px;
-      color: var(--vscode-descriptionForeground);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .content {
-      padding: 12px 16px;
-      overflow-y: auto;
-      display: grid;
-      row-gap: 8px;
-      flex: 1;
-      min-height: 0;
-    }
-
-    .section {
-      display: grid;
-      row-gap: 6px;
-      margin: 0;
-      padding: 0;
-      border: none;
-    }
-
-    .field {
-      display: grid;
-      row-gap: 4px;
-      margin: 0;
-      padding: 0;
-    }
-
-    .field-label {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      color: var(--vscode-descriptionForeground);
-      margin-bottom: 6px;
-    }
-
-    .field-input,
-    .field-textarea,
-    .field-select {
-      width: 100%;
-      background: var(--vscode-input-background);
-      border: 1px solid var(--vscode-sideBarSectionHeader-border);
-      color: var(--vscode-input-foreground);
-      border-radius: 3px;
-      padding: 6px 8px;
-      font-family: var(--vscode-font-family);
+    .no-file-warning {
+      padding: 12px;
+      background: var(--vscode-inputValidation-warningBackground);
+      border: 1px solid var(--vscode-inputValidation-warningBorder);
+      border-radius: 4px;
+      margin-bottom: 16px;
       font-size: 12px;
-      transition: border 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .field-input:focus,
-    .field-textarea:focus,
-    .field-select:focus {
-      outline: none;
-      border-color: var(--vscode-focusBorder);
-      box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-    }
-
-    .field-help {
-      display: none;
-    }
-
-    input[type="text"],
-    input[type="url"],
-    input[type="date"],
-    textarea,
-    select {
-      width: 100%;
-      padding: 6px 8px;
-      background: var(--vscode-input-background);
-      color: var(--vscode-input-foreground);
-      border: 1px solid var(--vscode-input-border);
-      border-radius: 3px;
-      font-family: var(--vscode-font-family);
-      font-size: 12px;
-      transition: border 0.15s ease;
-    }
-
-    input[type="text"]:focus,
-    input[type="url"]:focus,
-    input[type="date"]:focus,
-    textarea:focus,
-    select:focus {
-      outline: none;
-      border-color: var(--vscode-focusBorder);
-      box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-    }
-
-    /* Calendar icon styling - match text color */
-    input[type="date"]::-webkit-calendar-picker-indicator {
-      filter: invert(0.8);
-      cursor: pointer;
-      opacity: 0.7;
-    }
-
-    input[type="date"]::-webkit-calendar-picker-indicator:hover {
-      opacity: 1;
-    }
-
-    textarea {
-      min-height: 60px;
-      resize: vertical;
-      font-family: var(--vscode-editor-font-family);
-      line-height: 1.5;
-    }
-
-    select {
-      cursor: pointer;
-    }
-
-    .button-group {
-      display: flex;
-      gap: 8px;
-      padding: 12px 16px;
-      border-top: 1px solid var(--vscode-sideBarSectionHeader-border);
-      background: var(--vscode-sideBar-background);
-    }
-
-    .footer {
-      flex-shrink: 0;
-      background: var(--vscode-sideBar-background);
-    }
-
-    .help-text {
-      font-size: 10px;
-      color: var(--vscode-descriptionForeground);
-      margin-top: 4px;
-      line-height: 1.3;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <button class="back-btn" id="back-btn" title="Back to toolbox" aria-label="Back to main">
+    <button class="back-btn" id="back-btn" title="Back to main" aria-label="Back">
       <span class="codicon codicon-arrow-left"></span>
     </button>
-    <h2>Edit Metadata</h2>
+    <h2>Edit Library</h2>
   </div>
 
-  <div class="content">
-    <div class="section">
-      <div class="field">
-        <label for="title" class="field-label">Title</label>
-        <input type="text" id="title" class="field-input" value="${escapeAttr(metadata.title)}" placeholder="Short module title" />
-      </div>
-      <div class="field">
-        <label for="description" class="field-label">Description</label>
-        <textarea id="description" class="field-textarea" rows="3" placeholder="Full explanation of purpose and features">${escapeTextarea(metadata.description)}</textarea>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="field">
-        <label for="author" class="field-label">Author</label>
-        <input type="text" id="author" class="field-input" value="${escapeAttr(metadata.author)}" placeholder="Name &lt;email&gt;" />
-      </div>
-      <div class="field">
-        <label for="license" class="field-label">License</label>
-        <input type="text" id="license" class="field-input" value="${escapeAttr(metadata.license)}" placeholder="MIT, GPL, etc." />
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="field">
-        <label for="version" class="field-label">Version</label>
-        <input type="text" id="version" class="field-input" value="${escapeAttr(metadata.version)}" placeholder="1.0.0" />
-      </div>
-      <div class="field">
-        <label for="date" class="field-label">Date</label>
-        <input type="date" id="date" class="field-input" value="${escapeAttr(metadata.date)}" />
-      </div>
-      <div class="field">
-        <label for="since" class="field-label">Since</label>
-        <input type="date" id="since" class="field-input" value="${escapeAttr(metadata.since)}" />
-        <div class="field-help">First release date</div>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="field">
-        <label for="repository" class="field-label">Repository</label>
-        <input type="url" id="repository" class="field-input" value="${escapeAttr(metadata.repository)}" placeholder="https://github.com/user/repo" />
-      </div>
-      <div class="field">
-        <label for="homepage" class="field-label">Homepage</label>
-        <input type="url" id="homepage" class="field-input" value="${escapeAttr(metadata.homepage)}" placeholder="https://example.com" />
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="field">
-        <label for="category" class="field-label">Category</label>
-        <select id="category" class="field-select">
-          <option value="">Select category...</option>
-          <option value="Automation" ${metadata.category === 'Automation' ? 'selected' : ''}>Automation</option>
-          <option value="GUI" ${metadata.category === 'GUI' ? 'selected' : ''}>GUI</option>
-          <option value="WinAPI" ${metadata.category === 'WinAPI' ? 'selected' : ''}>WinAPI</option>
-          <option value="DevTools" ${metadata.category === 'DevTools' ? 'selected' : ''}>DevTools</option>
-          <option value="Networking" ${metadata.category === 'Networking' ? 'selected' : ''}>Networking</option>
-          <option value="FileSystem" ${metadata.category === 'FileSystem' ? 'selected' : ''}>FileSystem</option>
-          <option value="DataParsing" ${metadata.category === 'DataParsing' ? 'selected' : ''}>DataParsing</option>
-          <option value="Graphics" ${metadata.category === 'Graphics' ? 'selected' : ''}>Graphics</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="keywords" class="field-label">Keywords</label>
-        <input type="text" id="keywords" class="field-input" value="${escapeAttr(metadata.keywords)}" placeholder="json, parsing, data, autohotkey" />
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="field">
-        <label for="ahkVersion" class="field-label">AHK Version</label>
-        <input type="text" id="ahkVersion" class="field-input" value="${escapeAttr(metadata['ahk-version'])}" placeholder="v2.0+" />
-      </div>
-      <div class="field">
-        <label for="requires" class="field-label">Requires</label>
-        <textarea id="requires" class="field-textarea" rows="2" placeholder="Library files, DLLs, or external tools (one per line)">${escapeTextarea(metadata.requires)}</textarea>
-      </div>
-      <div class="field">
-        <label for="exports" class="field-label">Exports</label>
-        <textarea id="exports" class="field-textarea" rows="2" placeholder="Public classes, functions, hotkeys (one per line)">${escapeTextarea(metadata.exports)}</textarea>
-      </div>
-    </div>
+  <div class="file-info">
+    <div class="file-name">${escapeText(fileName)}</div>
+    <div class="file-path">${escapeText(filePath || 'No AHK file open')}</div>
   </div>
 
-  <div class="footer">
+  <div class="form-container">
+    ${!filePath ? '<div class="no-file-warning">⚠️ Open an AHK file to edit its metadata</div>' : ''}
+
+    <div class="form-section">
+      <h3 class="section-header">Basic Information</h3>
+
+      <div class="form-field">
+        <label for="lib-file">@file</label>
+        <input type="text" id="lib-file" value="${escapeAttr(metadata.file)}" placeholder="filename.ahk">
+      </div>
+
+      <div class="form-field">
+        <label for="lib-description">@description</label>
+        <textarea id="lib-description" placeholder="Library description">${escapeText(metadata.description)}</textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-field">
+          <label for="lib-author">@author</label>
+          <input type="text" id="lib-author" value="${escapeAttr(metadata.author)}" placeholder="Author name">
+        </div>
+
+        <div class="form-field">
+          <label for="lib-version">@version</label>
+          <input type="text" id="lib-version" value="${escapeAttr(metadata.version)}" placeholder="1.0.0">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-field">
+          <label for="lib-date">@date</label>
+          <input type="text" id="lib-date" value="${escapeAttr(metadata.date)}" placeholder="YYYY/MM/DD">
+        </div>
+
+        <div class="form-field">
+          <label for="lib-license">@license</label>
+          <input type="text" id="lib-license" value="${escapeAttr(metadata.license)}" placeholder="MIT, GPL, etc.">
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="form-section">
+      <h3 class="section-header">Links & Dependencies</h3>
+
+      <div class="form-field">
+        <label for="lib-repository">@repository</label>
+        <input type="text" id="lib-repository" value="${escapeAttr(metadata.repository)}" placeholder="https://github.com/...">
+      </div>
+
+      <div class="form-field">
+        <label for="lib-requires">@requires</label>
+        <input type="text" id="lib-requires" value="${escapeAttr(metadata.requires?.join(', '))}" placeholder="AutoHotkey v2.0+">
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
     <div class="button-group">
-      <button class="btn-primary" id="save-btn" title="Save metadata to file (Ctrl+S)">
-        <span class="codicon codicon-save"></span>
-        Save
-      </button>
-      <button class="btn-secondary" id="cancel-btn" title="Discard changes and go back">
-        Cancel
-      </button>
+      <button class="btn-secondary" id="cancel-btn">Cancel</button>
+      <button class="btn-primary" id="return-btn">Return</button>
     </div>
   </div>
 
   <script>
-    console.log('[sidebar-meta] script loaded');
     const vscode = acquireVsCodeApi();
-    const originalMetadata = ${originalMetadataJson};
-    const filePathValue = ${filePathJson};
 
-    // Button click handlers - same pattern as Settings view
-    const backBtn = document.getElementById('back-btn');
-    const cancelBtn = document.getElementById('cancel-btn');
-    console.log('[sidebar-meta] back-btn found:', !!backBtn);
-    console.log('[sidebar-meta] cancel-btn found:', !!cancelBtn);
-
-    backBtn?.addEventListener('click', () => {
-      console.log('[sidebar-meta] back-btn clicked, posting showMain');
+    document.getElementById('back-btn')?.addEventListener('click', () => {
       vscode.postMessage({ type: 'showMain' });
     });
 
-    cancelBtn?.addEventListener('click', () => {
-      console.log('[sidebar-meta] cancel-btn clicked, posting showMain');
+    document.getElementById('cancel-btn')?.addEventListener('click', () => {
       vscode.postMessage({ type: 'showMain' });
     });
 
-    document.getElementById('save-btn')?.addEventListener('click', () => {
-      handleSave();
-    });
-
-    const getElementValue = (id) => {
-      const element = document.getElementById(id);
-      return element && 'value' in element ? element.value : '';
-    };
-    const getTrimmedValue = (id) => getElementValue(id).trim();
-    const getMultilineValues = (id) => {
-      const raw = getElementValue(id);
-      if (!raw) {
-        return [];
-      }
-      return raw
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean);
-    };
-    const setValue = (target, key, value) => {
-      if (value) {
-        target[key] = value;
-      } else {
-        delete target[key];
-      }
-    };
-
-    function handleSave() {
-      const payload = { ...originalMetadata };
-
-      setValue(payload, 'title', getTrimmedValue('title'));
-      setValue(payload, 'description', getElementValue('description').trim());
-      setValue(payload, 'author', getTrimmedValue('author'));
-      setValue(payload, 'license', getTrimmedValue('license'));
-      setValue(payload, 'version', getTrimmedValue('version'));
-      setValue(payload, 'date', getTrimmedValue('date'));
-      setValue(payload, 'since', getTrimmedValue('since'));
-      setValue(payload, 'repository', getTrimmedValue('repository'));
-      setValue(payload, 'homepage', getTrimmedValue('homepage'));
-      setValue(payload, 'category', getElementValue('category'));
-      setValue(payload, 'keywords', getTrimmedValue('keywords'));
-      setValue(payload, 'ahk-version', getTrimmedValue('ahkVersion'));
-
-      const requires = getMultilineValues('requires');
-      const exportsValues = getMultilineValues('exports');
-
-      if (requires.length) {
-        payload.requires = requires;
-      } else {
-        delete payload.requires;
-      }
-
-      if (exportsValues.length) {
-        payload.exports = exportsValues;
-      } else {
-        delete payload.exports;
-      }
-
-      vscode.postMessage({
-        type: 'saveMetadata',
-        filePath: filePathValue,
-        metadata: payload
-      });
-    }
-
-    // Keyboard shortcut for save
-    document.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        handleSave();
-      }
+    document.getElementById('return-btn')?.addEventListener('click', () => {
+      vscode.postMessage({ type: 'showMain' });
     });
   </script>
 </body>
