@@ -18,7 +18,6 @@ import { FunctionTreeProvider } from './functionTreeProvider';
 import { AHKLSPIntegration } from './lspIntegration';
 import { DependencyTreeProvider } from './dependencyTreeProvider';
 import { PackageManagerProvider } from './packageManagerProvider';
-import { SettingsWebviewProvider } from './settingsWebviewProvider';
 import { registerAHKChatParticipant } from './chatParticipant';
 import { registerLibraryAttributionParticipant } from './libraryAttributionParticipant';
 import { ImportManager } from './import';
@@ -1167,21 +1166,16 @@ export async function activate(ctx: vscode.ExtensionContext) {
     console.log('Examples Curator not initialized:', error);
   }
 
-  // Initialize Settings Webview Provider
+  // Register settings command against the toolbox sidebar view.
   try {
-    const settingsProvider = new SettingsWebviewProvider(ctx.extensionUri);
     ctx.subscriptions.push(
-      vscode.window.registerWebviewViewProvider(
-        SettingsWebviewProvider.viewType,
-        settingsProvider
-      ),
-      vscode.commands.registerCommand('ahkv2Toolbox.openSettings', () => {
-        vscode.commands.executeCommand('workbench.view.extension.ahkv2-toolbox');
-        vscode.commands.executeCommand('ahkv2Toolbox.settings.focus');
+      vscode.commands.registerCommand('ahkv2Toolbox.openSettings', async () => {
+        await vscode.commands.executeCommand('workbench.view.extension.ahkv2-toolbox');
+        await toolboxProvider.showSettings();
       })
     );
   } catch (error) {
-    console.log('Settings Provider not initialized:', error);
+    console.log('Settings command not initialized:', error);
   }
 
   // Activate LSP Output Capture

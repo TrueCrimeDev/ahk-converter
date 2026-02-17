@@ -688,6 +688,12 @@
           "description": "Template for #Include paths. Use {name} for package name.",
           "scope": "window"
         },
+        "ahkv2Toolbox.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub personal access token used for higher API rate limits during package search and installs.",
+          "scope": "window"
+        },
         "ahkv2Toolbox.userLibraryPaths": {
           "type": "array",
           "default": [
@@ -729,12 +735,6 @@
           "default": true,
           "description": "Automatically add JSDoc header with description when saving.",
           "scope": "resource"
-        },
-        "ahkv2Toolbox.popularLibraries": {
-          "type": "array",
-          "default": [],
-          "description": "List of popular AHK v2 libraries with GitHub links.",
-          "scope": "window"
         }
       }
     },
@@ -879,5 +879,9 @@
     "autohotkey2",
     "toolbox",
     "productivity"
-  ]
+  ],
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "semver": "^7.7.4"
+  }
 }

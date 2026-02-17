@@ -31,12 +31,6 @@ export class SettingsWebviewProvider implements vscode.WebviewViewProvider {
         case 'saveSettings':
           await this.saveSettings(data.settings);
           break;
-        case 'addLibraryLink':
-          await this.addLibraryLink(data.library);
-          break;
-        case 'removeLibraryLink':
-          await this.removeLibraryLink(data.name);
-          break;
         case 'browseFolder':
           await this.browseFolder(data.settingKey);
           break;
@@ -65,35 +59,10 @@ export class SettingsWebviewProvider implements vscode.WebviewViewProvider {
         await config.update('includeFormat', settings.libFolderSettings.includeFormat, vscode.ConfigurationTarget.Global);
       }
 
-      // Popular libraries
-      if (settings.popularLibraries) {
-        await config.update('popularLibraries', settings.popularLibraries, vscode.ConfigurationTarget.Global);
-      }
-
       vscode.window.showInformationMessage('Settings saved successfully!');
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to save settings: ${error}`);
     }
-  }
-
-  private async addLibraryLink(library: { name: string; url: string; description: string }) {
-    const config = vscode.workspace.getConfiguration('ahkv2Toolbox');
-    const libraries = config.get<any[]>('popularLibraries', []);
-
-    libraries.push(library);
-    await config.update('popularLibraries', libraries, vscode.ConfigurationTarget.Global);
-
-    this.loadSettings();
-  }
-
-  private async removeLibraryLink(name: string) {
-    const config = vscode.workspace.getConfiguration('ahkv2Toolbox');
-    const libraries = config.get<any[]>('popularLibraries', []);
-
-    const filtered = libraries.filter(lib => lib.name !== name);
-    await config.update('popularLibraries', filtered, vscode.ConfigurationTarget.Global);
-
-    this.loadSettings();
   }
 
   private async browseFolder(settingKey: string) {
@@ -127,44 +96,13 @@ export class SettingsWebviewProvider implements vscode.WebviewViewProvider {
       libFolderSettings: {
         folders: config.get('libFolders', ['Lib', 'vendor']),
         includeFormat: config.get('includeFormat', 'Lib/{name}.ahk')
-      },
-      popularLibraries: config.get('popularLibraries', this.getDefaultLibraries())
+      }
     };
 
     this._view?.webview.postMessage({
       type: 'settingsLoaded',
       settings
     });
-  }
-
-  private getDefaultLibraries() {
-    return [
-      {
-        name: 'JSON',
-        url: 'https://github.com/thqby/ahk2_lib',
-        description: 'JSON parsing and stringification for AHK v2'
-      },
-      {
-        name: 'WinClip',
-        url: 'https://github.com/Clip-AHK/WinClip-v2',
-        description: 'Advanced clipboard manipulation library'
-      },
-      {
-        name: 'Socket',
-        url: 'https://github.com/G33kDude/Socket.ahk',
-        description: 'TCP/UDP socket communication library'
-      },
-      {
-        name: 'WebView2',
-        url: 'https://github.com/thqby/ahk2_lib',
-        description: 'Microsoft Edge WebView2 control for AHK v2'
-      },
-      {
-        name: 'Gdip',
-        url: 'https://github.com/mmikeww/AHK-v2-Gdip',
-        description: 'GDI+ graphics library'
-      }
-    ];
   }
 
   private _getHtmlForWebview(webview: vscode.Webview) {
@@ -352,28 +290,6 @@ export class SettingsWebviewProvider implements vscode.WebviewViewProvider {
     </div>
   </div>
 
-  <!-- Popular Libraries -->
-  <div class="section">
-    <h2>🌟 Popular AHK v2 Libraries</h2>
-
-    <div id="popularLibrariesList"></div>
-
-    <h3 style="margin-top: 16px;">Add New Library</h3>
-    <div class="field">
-      <label for="newLibName">Library Name</label>
-      <input type="text" id="newLibName" placeholder="MyLibrary" />
-    </div>
-    <div class="field">
-      <label for="newLibUrl">GitHub URL</label>
-      <input type="url" id="newLibUrl" placeholder="https://github.com/user/repo" />
-    </div>
-    <div class="field">
-      <label for="newLibDesc">Description</label>
-      <textarea id="newLibDesc" rows="2" placeholder="Brief description of the library"></textarea>
-    </div>
-    <button onclick="addLibrary()">+ Add Library</button>
-  </div>
-
   <!-- Save Button -->
   <div class="button-group" style="margin-top: 32px;">
     <button onclick="saveSettings()">💾 Save Settings</button>
@@ -406,7 +322,6 @@ export class SettingsWebviewProvider implements vscode.WebviewViewProvider {
 
       renderHeaderOrder(settings.headerSettings.order);
       renderLibFolders(settings.libFolderSettings.folders);
-      renderPopularLibraries(settings.popularLibraries);
 
       document.getElementById('includeFormat').value = settings.libFolderSettings.includeFormat;
     }
@@ -423,22 +338,6 @@ export class SettingsWebviewProvider implements vscode.WebviewViewProvider {
       container.innerHTML = folders.map(folder =>
         \`<div class="tag">\${folder}<button onclick="removeLibFolder('\${folder}')">×</button></div>\`
       ).join('');
-    }
-
-    function renderPopularLibraries(libraries) {
-      const container = document.getElementById('popularLibrariesList');
-      container.innerHTML = libraries.map(lib => \`
-        <div class="list-item">
-          <div class="list-item-content">
-            <div class="list-item-title">\${lib.name}</div>
-            <div class="list-item-desc">\${lib.description}</div>
-            <div class="list-item-desc" style="font-size: 0.8em; margin-top: 2px;">
-              <a href="\${lib.url}" style="color: var(--vscode-textLink-foreground);">\${lib.url}</a>
-            </div>
-          </div>
-          <button class="secondary" onclick="removeLibrary('\${lib.name}')">Remove</button>
-        </div>
-      \`).join('');
     }
 
     function addLibFolder() {
@@ -470,34 +369,6 @@ export class SettingsWebviewProvider implements vscode.WebviewViewProvider {
       }
     }
 
-    function addLibrary() {
-      const name = document.getElementById('newLibName').value.trim();
-      const url = document.getElementById('newLibUrl').value.trim();
-      const description = document.getElementById('newLibDesc').value.trim();
-
-      if (!name || !url) {
-        alert('Please enter a library name and GitHub URL');
-        return;
-      }
-
-      vscode.postMessage({
-        type: 'addLibraryLink',
-        library: { name, url, description }
-      });
-
-      // Clear inputs
-      document.getElementById('newLibName').value = '';
-      document.getElementById('newLibUrl').value = '';
-      document.getElementById('newLibDesc').value = '';
-    }
-
-    function removeLibrary(name) {
-      vscode.postMessage({
-        type: 'removeLibraryLink',
-        name
-      });
-    }
-
     function saveSettings() {
       const settings = {
         headerSettings: {
@@ -509,8 +380,7 @@ export class SettingsWebviewProvider implements vscode.WebviewViewProvider {
         libFolderSettings: {
           folders: currentSettings.libFolderSettings.folders,
           includeFormat: document.getElementById('includeFormat').value
-        },
-        popularLibraries: currentSettings.popularLibraries
+        }
       };
 
       vscode.postMessage({

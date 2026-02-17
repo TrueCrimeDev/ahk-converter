@@ -24,6 +24,7 @@ interface ToolboxSettings {
   defaultSingleInstance?: string;
   includeFormat?: string;
   libFolders?: string[];
+  githubToken?: string;
 }
 
 interface ToolboxSettingsMessage {
@@ -36,6 +37,7 @@ interface ToolboxSettingsMessage {
     searchFolders: string[];
     includeFormat: string;
   };
+  githubToken?: string;
 }
 
 const enum WebviewMessageType {
@@ -43,7 +45,8 @@ const enum WebviewMessageType {
   ShowSettings = 'showSettings',
   ShowEditForm = 'showEditForm',
   ShowMain = 'showMain',
-  SaveSettings = 'saveSettings'
+  SaveSettings = 'saveSettings',
+  SaveLibraryMetadata = 'saveLibraryMetadata'
 }
 
 interface WebviewMessage {
@@ -51,6 +54,8 @@ interface WebviewMessage {
   command?: string;
   args?: any[];
   settings?: ToolboxSettingsMessage;
+  filePath?: string;
+  metadata?: LibraryMetadata;
 }
 
 /**
@@ -134,6 +139,12 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
               await this.saveSettings(data.settings);
             }
             break;
+          case 'saveLibraryMetadata':
+          case WebviewMessageType.SaveLibraryMetadata:
+            if (data.filePath && data.metadata) {
+              await this.saveLibraryMetadata(data.filePath, data.metadata);
+            }
+            break;
           default:
             console.log('[Toolbox] Unknown message type:', data.type);
         }
@@ -155,6 +166,15 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
     return this.escapeHtml(value).replace(/"/g, '&quot;');
   }
 
+  private getNonce(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 32; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
   /**
    * Show settings view
    */
@@ -172,7 +192,8 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       defaultRequires: config.get('defaultRequires', 'AutoHotkey v2.1'),
       defaultSingleInstance: config.get('defaultSingleInstance', 'Force'),
       includeFormat: config.get('includeFormat', 'Lib/{name}.ahk'),
-      libFolders: config.get('libFolders', ['Lib', 'vendor'])
+      libFolders: config.get('libFolders', ['Lib', 'vendor']),
+      githubToken: config.get('githubToken', '')
     };
 
     this._view.webview.html = this.getSettingsHtml(currentSettings);
@@ -210,6 +231,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       if (filePath.endsWith('.ahk') || filePath.endsWith('.ahk2')) {
         metadata = await this.parseJSDoc(filePath);
         metadata.file = metadata.file || require('path').basename(filePath);
+        metadata.repository = metadata.repository || (typeof metadata.link === 'string' ? metadata.link : '');
       }
     }
 
@@ -299,12 +321,158 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
         await config.update('includeFormat', settings.libFolderSettings.includeFormat, vscode.ConfigurationTarget.Global);
       }
 
+      if (typeof settings.githubToken === 'string') {
+        await config.update('githubToken', settings.githubToken.trim(), vscode.ConfigurationTarget.Global);
+      }
+
       vscode.window.showInformationMessage('Settings saved successfully!');
       this.showMainView();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       vscode.window.showErrorMessage(`Failed to save settings: ${errorMessage}`);
     }
+  }
+
+  /**
+   * Save library metadata to the selected file.
+   */
+  private async saveLibraryMetadata(filePath: string, metadata: LibraryMetadata): Promise<void> {
+    if (!filePath || (!filePath.endsWith('.ahk') && !filePath.endsWith('.ahk2'))) {
+      throw new Error('Open an AutoHotkey library file before updating metadata.');
+    }
+
+    const normalized = this.normalizeLibraryMetadata(metadata, filePath);
+    const uri = vscode.Uri.file(filePath);
+    const document = await vscode.workspace.openTextDocument(uri);
+    const eol = document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+    const metadataBlock = this.buildMetadataCommentBlock(normalized, eol);
+
+    const originalText = document.getText();
+    const updatedText = this.upsertMetadataBlock(originalText, metadataBlock, eol);
+
+    if (updatedText === originalText) {
+      vscode.window.showInformationMessage('No metadata changes to apply.');
+      this.showMainView();
+      return;
+    }
+
+    const fullRange = new vscode.Range(
+      document.positionAt(0),
+      document.positionAt(originalText.length)
+    );
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(uri, fullRange, updatedText);
+
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied) {
+      throw new Error('Failed to apply metadata changes.');
+    }
+
+    await document.save();
+    vscode.window.showInformationMessage(`Updated library metadata in ${require('path').basename(filePath)}.`);
+    this.showMainView();
+  }
+
+  private normalizeLibraryMetadata(input: LibraryMetadata, filePath: string): LibraryMetadata {
+    const trimValue = (value: unknown): string => {
+      if (typeof value !== 'string') {
+        return '';
+      }
+      return value.trim();
+    };
+
+    const normalizeSingleLine = (value: unknown): string => trimValue(value).replace(/\s+/g, ' ');
+    const normalizeMultiline = (value: unknown): string =>
+      trimValue(value)
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .join('\n');
+
+    const rawRequires = Array.isArray(input.requires) ? input.requires : [];
+    const requires = rawRequires
+      .map((item: string) => item.trim())
+      .filter((item: string) => Boolean(item));
+
+    return {
+      file: normalizeSingleLine(input.file) || require('path').basename(filePath),
+      description: normalizeMultiline(input.description),
+      author: normalizeSingleLine(input.author),
+      version: normalizeSingleLine(input.version),
+      date: normalizeSingleLine(input.date),
+      license: normalizeSingleLine(input.license),
+      repository: normalizeSingleLine(input.repository),
+      requires
+    };
+  }
+
+  private buildMetadataCommentBlock(metadata: LibraryMetadata, eol: string): string {
+    const lines: string[] = ['/**'];
+
+    const appendTag = (tag: string, value?: string): void => {
+      if (!value) {
+        return;
+      }
+      const normalized = value
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+      if (normalized.length === 0) {
+        return;
+      }
+      lines.push(` * @${tag} ${normalized[0]}`);
+      for (let i = 1; i < normalized.length; i++) {
+        lines.push(` * ${normalized[i]}`);
+      }
+    };
+
+    appendTag('file', metadata.file);
+    appendTag('description', metadata.description);
+    appendTag('author', metadata.author);
+    appendTag('version', metadata.version);
+    appendTag('date', metadata.date);
+    appendTag('license', metadata.license);
+    appendTag('repository', metadata.repository);
+
+    for (const dep of metadata.requires || []) {
+      appendTag('requires', dep);
+    }
+
+    lines.push(' */');
+    return lines.join(eol);
+  }
+
+  private upsertMetadataBlock(content: string, metadataBlock: string, eol: string): string {
+    const existing = this.findExistingMetadataBlock(content);
+    if (existing) {
+      return `${content.slice(0, existing.start)}${metadataBlock}${content.slice(existing.end)}`;
+    }
+
+    const insertOffset = content.startsWith('\uFEFF') ? 1 : 0;
+    const prefix = content.slice(0, insertOffset);
+    const suffix = content.slice(insertOffset);
+    return `${prefix}${metadataBlock}${eol}${eol}${suffix}`;
+  }
+
+  private findExistingMetadataBlock(content: string): { start: number; end: number } | null {
+    const commentRegex = /\/\*{2,}[\s\S]*?\*\//g;
+    const metadataTagPattern = /@(file|description|author|version|date|license|repository|requires|link)\b/i;
+    let match: RegExpExecArray | null;
+
+    while ((match = commentRegex.exec(content)) !== null) {
+      const block = match[0];
+      if (metadataTagPattern.test(block)) {
+        return {
+          start: match.index,
+          end: match.index + block.length
+        };
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -320,9 +488,12 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       throw new Error('Webview not initialized');
     }
 
-    const toolkitUri = this._view.webview.asWebviewUri(
+    const webview = this._view.webview;
+    const toolkitUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js')
     );
+    const codiconsUri = 'https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css';
+    const scriptNonce = this.getNonce();
 
     const cacheBuster = Date.now();
 
@@ -331,12 +502,13 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>${params.title} - ${cacheBuster}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css">
-  <script type="module" src="${toolkitUri}"></script>
+  <link rel="stylesheet" href="${codiconsUri}">
+  <script type="module" nonce="${scriptNonce}" src="${toolkitUri}"></script>
   <style>
     ${this.getCommonStyles()}
     ${params.additionalStyles || ''}
@@ -344,7 +516,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
   ${params.bodyContent}
-  <script>
+  <script nonce="${scriptNonce}">
     const vscode = acquireVsCodeApi();
     ${params.scriptContent}
   </script>
@@ -441,9 +613,12 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       return '';
     }
 
-    const toolkitUri = this._view.webview.asWebviewUri(
+    const webview = this._view.webview;
+    const toolkitUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js')
     );
+    const codiconsUri = 'https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css';
+    const scriptNonce = this.getNonce();
     const cacheBuster = Date.now();
     const extensionSettingsQuery = `@ext:${this.extensionId}`;
 
@@ -452,12 +627,13 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>AHKv2 Toolbox - ${cacheBuster}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css">
-  <script type="module" src="${toolkitUri}"></script>
+  <link rel="stylesheet" href="${codiconsUri}">
+  <script type="module" nonce="${scriptNonce}" src="${toolkitUri}"></script>
   <style>
     * {
       margin: 0;
@@ -696,7 +872,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
     </section>
   </div>
 
-  <script>
+  <script nonce="${scriptNonce}">
     const vscode = acquireVsCodeApi();
 
     const actionMap = {
@@ -765,19 +941,23 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       return '';
     }
 
-    // Get the toolkit URI
-    const toolkitUri = this._view.webview.asWebviewUri(
+    const webview = this._view.webview;
+    const toolkitUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js')
     );
+    const codiconsUri = 'https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css';
+    const scriptNonce = this.getNonce();
+    const escapedGithubToken = this.escapeAttribute(settings.githubToken || '');
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
   <title>Settings</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css">
-  <script type="module" src="${toolkitUri}"></script>
+  <link rel="stylesheet" href="${codiconsUri}">
+  <script type="module" nonce="${scriptNonce}" src="${toolkitUri}"></script>
   <style>
     * {
       margin: 0;
@@ -1047,32 +1227,6 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       background: var(--vscode-button-hoverBackground);
     }
 
-    /* Link styling for Popular Libraries */
-    .library-link {
-      display: block;
-      margin-bottom: 12px;
-    }
-
-    .library-url {
-      font-size: 12px;
-      display: block;
-      margin-top: 4px;
-      margin-bottom: 2px;
-      color: var(--vscode-textLink-foreground);
-      text-decoration: none;
-      cursor: pointer;
-    }
-
-    .library-url:hover {
-      color: var(--vscode-textLink-activeForeground);
-      text-decoration: underline;
-    }
-
-    .library-link .setting-description {
-      margin-top: 2px;
-      margin-left: 0;
-    }
-
     /* Back button (icon style) */
     .back-btn {
       width: 28px;
@@ -1232,61 +1386,19 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 
     <div class="divider"></div>
 
-    <!-- Popular Libraries Section -->
-    <section class="settings-section" role="region" aria-label="Popular Libraries">
-      <h3 class="section-header">Popular AHK v2 Libraries</h3>
+    <section class="settings-section" role="region" aria-label="GitHub API">
+      <h3 class="section-header">GitHub API</h3>
 
-      <div class="setting-description" style="margin-bottom: 12px;">
-        Quick access to commonly used AutoHotkey v2 libraries. Click to open in browser.
-      </div>
-
-      <div class="library-link">
-        <div class="setting-label">JSON Parser</div>
-        <a href="https://github.com/thqby/ahk2_lib" target="_blank" class="library-url">
-          github.com/thqby/ahk2_lib
-        </a>
+      <div class="setting-row">
+        <label for="github-token" class="setting-label">GitHub Token</label>
+        <input
+          type="password"
+          id="github-token"
+          value="${escapedGithubToken}"
+          placeholder="ghp_..."
+          class="setting-control">
         <div class="setting-description">
-          JSON parsing and stringification for AHK v2
-        </div>
-      </div>
-
-      <div class="library-link">
-        <div class="setting-label">WinClip</div>
-        <a href="https://github.com/Clip-AHK/WinClip-v2" target="_blank" class="library-url">
-          github.com/Clip-AHK/WinClip-v2
-        </a>
-        <div class="setting-description">
-          Advanced clipboard manipulation library
-        </div>
-      </div>
-
-      <div class="library-link">
-        <div class="setting-label">Socket</div>
-        <a href="https://github.com/G33kDude/Socket.ahk" target="_blank" class="library-url">
-          github.com/G33kDude/Socket.ahk
-        </a>
-        <div class="setting-description">
-          TCP/UDP socket communication library
-        </div>
-      </div>
-
-      <div class="library-link">
-        <div class="setting-label">WebView2</div>
-        <a href="https://github.com/thqby/ahk2_lib" target="_blank" class="library-url">
-          github.com/thqby/ahk2_lib
-        </a>
-        <div class="setting-description">
-          Microsoft Edge WebView2 control for AHK v2
-        </div>
-      </div>
-
-      <div class="library-link">
-        <div class="setting-label">Gdip</div>
-        <a href="https://github.com/mmikeww/AHK-v2-Gdip" target="_blank" class="library-url">
-          github.com/mmikeww/AHK-v2-Gdip
-        </a>
-        <div class="setting-description">
-          GDI+ graphics library for advanced image manipulation
+          Optional personal access token used for higher GitHub API rate limits.
         </div>
       </div>
     </section>
@@ -1306,7 +1418,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
     </section>
   </div>
 
-  <script>
+  <script nonce="${scriptNonce}">
     const vscode = acquireVsCodeApi();
 
     // Load saved settings
@@ -1329,7 +1441,8 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
         libFolderSettings: {
           includeFormat: document.getElementById('include-format').value,
           searchFolders: document.getElementById('lib-folders').value.split(',').map(s => s.trim())
-        }
+        },
+        githubToken: document.getElementById('github-token').value
       };
 
       vscode.postMessage({ type: 'saveSettings', settings });
@@ -1349,6 +1462,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       document.getElementById('single-instance').value = 'Force';
       document.getElementById('include-format').value = 'Lib/{name}.ahk';
       document.getElementById('lib-folders').value = 'Lib, vendor';
+      document.getElementById('github-token').value = '';
     }
 
     // Button click handlers
@@ -1386,9 +1500,12 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       return '';
     }
 
-    const toolkitUri = this._view.webview.asWebviewUri(
+    const webview = this._view.webview;
+    const toolkitUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'node_modules', '@vscode', 'webview-ui-toolkit', 'dist', 'toolkit.js')
     );
+    const codiconsUri = 'https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css';
+    const scriptNonce = this.getNonce();
 
     const escapeAttr = (value?: string) => this.escapeAttribute(value || '');
     const escapeText = (value?: string) => this.escapeHtml(value || '');
@@ -1399,9 +1516,10 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
   <title>Edit Library</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.32/dist/codicon.css">
-  <script type="module" src="${toolkitUri}"></script>
+  <link rel="stylesheet" href="${codiconsUri}">
+  <script type="module" nonce="${scriptNonce}" src="${toolkitUri}"></script>
   <style>
     * {
       margin: 0;
@@ -1614,35 +1732,35 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       <h3 class="section-header">Basic Information</h3>
 
       <div class="form-field">
-        <label for="lib-file">@file</label>
+        <label for="lib-file">File</label>
         <input type="text" id="lib-file" value="${escapeAttr(metadata.file)}" placeholder="filename.ahk">
       </div>
 
       <div class="form-field">
-        <label for="lib-description">@description</label>
+        <label for="lib-description">Description</label>
         <textarea id="lib-description" placeholder="Library description">${escapeText(metadata.description)}</textarea>
       </div>
 
       <div class="form-row">
         <div class="form-field">
-          <label for="lib-author">@author</label>
+          <label for="lib-author">Author</label>
           <input type="text" id="lib-author" value="${escapeAttr(metadata.author)}" placeholder="Author name">
         </div>
 
         <div class="form-field">
-          <label for="lib-version">@version</label>
+          <label for="lib-version">Version</label>
           <input type="text" id="lib-version" value="${escapeAttr(metadata.version)}" placeholder="1.0.0">
         </div>
       </div>
 
       <div class="form-row">
         <div class="form-field">
-          <label for="lib-date">@date</label>
+          <label for="lib-date">Date</label>
           <input type="text" id="lib-date" value="${escapeAttr(metadata.date)}" placeholder="YYYY/MM/DD">
         </div>
 
         <div class="form-field">
-          <label for="lib-license">@license</label>
+          <label for="lib-license">License</label>
           <input type="text" id="lib-license" value="${escapeAttr(metadata.license)}" placeholder="MIT, GPL, etc.">
         </div>
       </div>
@@ -1654,12 +1772,12 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       <h3 class="section-header">Links & Dependencies</h3>
 
       <div class="form-field">
-        <label for="lib-repository">@repository</label>
+        <label for="lib-repository">Repository</label>
         <input type="text" id="lib-repository" value="${escapeAttr(metadata.repository)}" placeholder="https://github.com/...">
       </div>
 
       <div class="form-field">
-        <label for="lib-requires">@requires</label>
+        <label for="lib-requires">Requires</label>
         <input type="text" id="lib-requires" value="${escapeAttr(metadata.requires?.join(', '))}" placeholder="AutoHotkey v2.0+">
       </div>
     </div>
@@ -1668,12 +1786,13 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 
     <div class="button-group">
       <button class="btn-secondary" id="cancel-btn">Cancel</button>
-      <button class="btn-primary" id="return-btn">Return</button>
+      <button class="btn-primary" id="update-btn" ${filePath ? '' : 'disabled'}>Update</button>
     </div>
   </div>
 
-  <script>
+  <script nonce="${scriptNonce}">
     const vscode = acquireVsCodeApi();
+    const libraryFilePath = ${JSON.stringify(filePath || '')};
 
     document.getElementById('back-btn')?.addEventListener('click', () => {
       vscode.postMessage({ type: 'showMain' });
@@ -1683,8 +1802,32 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       vscode.postMessage({ type: 'showMain' });
     });
 
-    document.getElementById('return-btn')?.addEventListener('click', () => {
-      vscode.postMessage({ type: 'showMain' });
+    document.getElementById('update-btn')?.addEventListener('click', () => {
+      if (!libraryFilePath) {
+        vscode.postMessage({ type: 'showMain' });
+        return;
+      }
+
+      const getValue = (id) => (document.getElementById(id)?.value || '').trim();
+      const requires = getValue('lib-requires')
+        .split(/[,\\n]/)
+        .map(item => item.trim())
+        .filter(Boolean);
+
+      vscode.postMessage({
+        type: 'saveLibraryMetadata',
+        filePath: libraryFilePath,
+        metadata: {
+          file: getValue('lib-file'),
+          description: getValue('lib-description'),
+          author: getValue('lib-author'),
+          version: getValue('lib-version'),
+          date: getValue('lib-date'),
+          license: getValue('lib-license'),
+          repository: getValue('lib-repository'),
+          requires
+        }
+      });
     });
   </script>
 </body>

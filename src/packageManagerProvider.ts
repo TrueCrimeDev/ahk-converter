@@ -2,9 +2,50 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import type { Stats } from 'fs';
+import * as semver from 'semver';
 import { insertIncludeLine, previewIncludeInsertion } from './includeLineInserter';
-import { PackageSearchService, PackageSearchResult, SearchFilters } from './packageSearchService';
+import { PackageSearchService, PackageSearchResult, SearchFilters, PackageInstallSource } from './packageSearchService';
 import { LibraryDetailPanel, LibraryDetailData, LibraryDetailPanelActions } from './libraryDetailPanel';
+import { ArisPackageInstaller } from './arisPackageInstaller';
+
+interface PackageItemMetadata {
+  author?: string;
+  stars?: number;
+  category?: string;
+  repositoryUrl?: string;
+  sourceType?: string;
+  installSpec?: string;
+  source?: PackageInstallSource;
+  includeFormat?: string;
+  installLocationType?: InstallLocationType;
+  managedByExtension?: boolean;
+}
+
+type InstallLocationType = 'workspace' | 'user' | 'system' | 'vendor' | 'external';
+
+interface InstallLocation {
+  label: string;
+  path: string;
+  description: string;
+  installLocationType: InstallLocationType;
+}
+
+interface PersistedPackageRecord {
+  name: string;
+  version: string;
+  path: string;
+  description?: string;
+  author?: string;
+  stars?: number;
+  category?: string;
+  repositoryUrl?: string;
+  sourceType?: string;
+  installSpec?: string;
+  source?: PackageInstallSource;
+  includeFormat?: string;
+  installLocationType?: InstallLocationType;
+  managedByExtension?: boolean;
+}
 
 /**
  * Represents a package or library item in the package manager
@@ -17,12 +58,7 @@ export class PackageItem extends vscode.TreeItem {
     public readonly packagePath: string,
     public readonly packageType: 'installed' | 'available' | 'updates',
     public readonly description?: string,
-    public readonly metadata?: {
-      author?: string;
-      stars?: number;
-      category?: string;
-      repositoryUrl?: string;
-    },
+    public readonly metadata?: PackageItemMetadata,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.None
   ) {
     super(packageName, collapsibleState);
@@ -145,6 +181,12 @@ interface PackageInfo {
   stars?: number;
   category?: string;
   repositoryUrl?: string;
+  sourceType?: string;
+  installSpec?: string;
+  source?: PackageInstallSource;
+  includeFormat?: string;
+  installLocationType?: InstallLocationType;
+  managedByExtension?: boolean;
 }
 
 /**
@@ -154,11 +196,14 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
   private _onDidChangeTreeData = new vscode.EventEmitter<PackageItem | CategoryItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
+  private readonly packageStateFileName = '.ahkv2-toolbox.packages.json';
   private workspaceRoot: string | null = null;
   private installedPackages: PackageInfo[] = [];
   private availablePackages: PackageInfo[] = [];
   private packagesWithUpdates: PackageInfo[] = [];
+  private managedPackagesByPath = new Map<string, PackageInfo>();
   private searchService: PackageSearchService;
+  private installer: ArisPackageInstaller;
   private lastSearchQuery: string = '';
   private isShowingSearchResults: boolean = false;
 
@@ -170,14 +215,18 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
 
     // Initialize search service
     this.searchService = PackageSearchService.getInstance();
+    this.installer = new ArisPackageInstaller();
 
     // Initialize by scanning for packages
-    this.scanForPackages();
+    void this.scanForPackages().finally(() => {
+      this._onDidChangeTreeData.fire();
+    });
   }
 
   refresh(): void {
-    this.scanForPackages();
-    this._onDidChangeTreeData.fire();
+    void this.scanForPackages().finally(() => {
+      this._onDidChangeTreeData.fire();
+    });
   }
 
   getTreeItem(element: PackageItem | CategoryItem): vscode.TreeItem {
@@ -240,9 +289,284 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
         author: pkg.author,
         stars: pkg.stars,
         category: pkg.category,
-        repositoryUrl: pkg.repositoryUrl
+        repositoryUrl: pkg.repositoryUrl,
+        sourceType: pkg.sourceType,
+        installSpec: pkg.installSpec,
+        source: pkg.source,
+        includeFormat: pkg.includeFormat,
+        installLocationType: pkg.installLocationType,
+        managedByExtension: pkg.managedByExtension
       }
     ));
+  }
+
+  private getPackageStatePath(): string | null {
+    if (!this.workspaceRoot) {
+      return null;
+    }
+    return path.join(this.workspaceRoot, this.packageStateFileName);
+  }
+
+  private getPathKey(targetPath: string): string {
+    const resolved = path.resolve(targetPath);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  }
+
+  private mergePackageInfo(base: PackageInfo, updates: PackageInfo): PackageInfo {
+    return {
+      ...base,
+      ...updates,
+      name: updates.name || base.name,
+      version: updates.version || base.version,
+      path: updates.path || base.path
+    };
+  }
+
+  private mergeWithManagedMetadata(info: PackageInfo): PackageInfo {
+    const key = this.getPathKey(info.path);
+    const managed = this.managedPackagesByPath.get(key);
+    if (!managed) {
+      return info;
+    }
+
+    const merged: PackageInfo = {
+      ...managed,
+      ...info
+    };
+
+    if (!merged.source && managed.source) {
+      merged.source = managed.source;
+    }
+    if (!merged.installSpec && managed.installSpec) {
+      merged.installSpec = managed.installSpec;
+    }
+    if (!merged.includeFormat && managed.includeFormat) {
+      merged.includeFormat = managed.includeFormat;
+    }
+    if (!merged.installLocationType && managed.installLocationType) {
+      merged.installLocationType = managed.installLocationType;
+    }
+    if (!merged.repositoryUrl && managed.repositoryUrl) {
+      merged.repositoryUrl = managed.repositoryUrl;
+    }
+
+    merged.managedByExtension = managed.managedByExtension || info.managedByExtension;
+    return merged;
+  }
+
+  private addOrUpdateInstalledPackage(info: PackageInfo): void {
+    const merged = this.mergeWithManagedMetadata(info);
+    const key = this.getPathKey(merged.path);
+    const existingIndex = this.installedPackages.findIndex(pkg => this.getPathKey(pkg.path) === key);
+
+    if (existingIndex >= 0) {
+      this.installedPackages[existingIndex] = this.mergePackageInfo(this.installedPackages[existingIndex], merged);
+      return;
+    }
+
+    this.installedPackages.push(merged);
+  }
+
+  private async loadManagedPackageState(): Promise<Map<string, PackageInfo>> {
+    const result = new Map<string, PackageInfo>();
+    const statePath = this.getPackageStatePath();
+    if (!statePath) {
+      return result;
+    }
+
+    try {
+      const content = await fs.readFile(statePath, 'utf-8');
+      const parsed = JSON.parse(content);
+      const records = this.extractPersistedRecords(parsed);
+
+      for (const record of records) {
+        const info = this.persistedRecordToPackageInfo(record);
+        if (!info) {
+          continue;
+        }
+        result.set(this.getPathKey(info.path), info);
+      }
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code !== 'ENOENT') {
+        console.warn('Failed to read managed package state:', error);
+      }
+    }
+
+    return result;
+  }
+
+  private extractPersistedRecords(parsed: unknown): PersistedPackageRecord[] {
+    if (Array.isArray(parsed)) {
+      return parsed as PersistedPackageRecord[];
+    }
+
+    if (typeof parsed === 'object' && parsed !== null) {
+      const payload = parsed as { packages?: unknown };
+      if (Array.isArray(payload.packages)) {
+        return payload.packages as PersistedPackageRecord[];
+      }
+    }
+
+    return [];
+  }
+
+  private persistedRecordToPackageInfo(record: PersistedPackageRecord): PackageInfo | null {
+    if (!record || typeof record !== 'object') {
+      return null;
+    }
+    if (typeof record.name !== 'string' || !record.name.trim()) {
+      return null;
+    }
+    if (typeof record.path !== 'string' || !record.path.trim()) {
+      return null;
+    }
+
+    return {
+      name: record.name.trim(),
+      version: typeof record.version === 'string' && record.version.trim() ? record.version.trim() : 'latest',
+      path: record.path.trim(),
+      description: typeof record.description === 'string' ? record.description : undefined,
+      author: typeof record.author === 'string' ? record.author : undefined,
+      stars: typeof record.stars === 'number' ? record.stars : undefined,
+      category: typeof record.category === 'string' ? record.category : undefined,
+      repositoryUrl: typeof record.repositoryUrl === 'string' ? record.repositoryUrl : undefined,
+      sourceType: typeof record.sourceType === 'string' ? record.sourceType : undefined,
+      installSpec: typeof record.installSpec === 'string' ? record.installSpec : undefined,
+      source: record.source,
+      includeFormat: typeof record.includeFormat === 'string' ? record.includeFormat : undefined,
+      installLocationType: record.installLocationType,
+      managedByExtension: record.managedByExtension === true
+    };
+  }
+
+  private packageInfoToPersistedRecord(info: PackageInfo): PersistedPackageRecord {
+    return {
+      name: info.name,
+      version: info.version,
+      path: info.path,
+      description: info.description,
+      author: info.author,
+      stars: info.stars,
+      category: info.category,
+      repositoryUrl: info.repositoryUrl,
+      sourceType: info.sourceType,
+      installSpec: info.installSpec,
+      source: info.source,
+      includeFormat: info.includeFormat,
+      installLocationType: info.installLocationType,
+      managedByExtension: info.managedByExtension
+    };
+  }
+
+  private async saveManagedPackageState(): Promise<void> {
+    const statePath = this.getPackageStatePath();
+    if (!statePath) {
+      return;
+    }
+
+    const records = Array.from(this.managedPackagesByPath.values())
+      .map(info => this.packageInfoToPersistedRecord(info))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
+
+    const payload = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      packages: records
+    };
+
+    await fs.writeFile(statePath, JSON.stringify(payload, null, 2), 'utf-8');
+  }
+
+  private async upsertManagedPackage(info: PackageInfo): Promise<void> {
+    if (!info.path) {
+      return;
+    }
+
+    const managedInfo: PackageInfo = {
+      ...info,
+      managedByExtension: true
+    };
+
+    this.managedPackagesByPath.set(this.getPathKey(info.path), managedInfo);
+    await this.saveManagedPackageState();
+  }
+
+  private async removeManagedPackageByPath(packagePath: string): Promise<void> {
+    const key = this.getPathKey(packagePath);
+    if (!this.managedPackagesByPath.delete(key)) {
+      return;
+    }
+
+    await this.saveManagedPackageState();
+  }
+
+  private async addManagedPackagesOutsideWorkspace(): Promise<void> {
+    const staleKeys: string[] = [];
+
+    for (const [key, managed] of this.managedPackagesByPath.entries()) {
+      const alreadyListed = this.installedPackages.some(pkg => this.getPathKey(pkg.path) === key);
+      if (alreadyListed) {
+        continue;
+      }
+
+      const stats = await this.tryGetFileStats(managed.path);
+      if (!stats) {
+        staleKeys.push(key);
+        continue;
+      }
+
+      let extracted: Partial<PackageInfo> | null = null;
+      if (stats.isFile() && /\.(ahk|ahk2|ah2)$/i.test(managed.path)) {
+        extracted = await this.extractPackageInfo(managed.path);
+      }
+
+      this.addOrUpdateInstalledPackage({
+        ...managed,
+        version: extracted?.version || managed.version || 'latest',
+        description: extracted?.description || managed.description || 'AHK Library',
+        author: extracted?.author || managed.author,
+        lastModified: stats.mtime
+      });
+    }
+
+    if (staleKeys.length > 0) {
+      for (const key of staleKeys) {
+        this.managedPackagesByPath.delete(key);
+      }
+      await this.saveManagedPackageState();
+    }
+  }
+
+  private isPathInsideDirectory(targetPath: string, directoryPath: string): boolean {
+    const resolvedTarget = path.resolve(targetPath);
+    const resolvedDirectory = path.resolve(directoryPath);
+    const relative = path.relative(resolvedDirectory, resolvedTarget);
+    return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  }
+
+  private async isPathSafeForManagedDeletion(targetPath: string): Promise<boolean> {
+    const locations = await this.getInstallLocations();
+    return locations.some(location => this.isPathInsideDirectory(targetPath, location.path));
+  }
+
+  private getConfiguredIncludeFormatForLocation(locationType: InstallLocationType): string {
+    const config = vscode.workspace.getConfiguration('ahkv2Toolbox');
+    if (locationType === 'user') {
+      return config.get<string>('userLibraryIncludeFormat', '%A_AppData%/../../AutoHotkey/v2/Lib/{name}.ahk');
+    }
+    if (locationType === 'system') {
+      return '<{name}>';
+    }
+    return config.get<string>('includeFormat', 'Lib/{name}.ahk');
+  }
+
+  private getIncludeFormatForPackage(packageName: string): string {
+    const installed = this.installedPackages.find(pkg => pkg.name.toLowerCase() === packageName.toLowerCase());
+    if (installed?.includeFormat) {
+      return installed.includeFormat;
+    }
+    return this.getConfiguredIncludeFormatForLocation(installed?.installLocationType || 'workspace');
   }
 
   /**
@@ -258,6 +582,8 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
     this.packagesWithUpdates = [];
 
     try {
+      this.managedPackagesByPath = await this.loadManagedPackageState();
+
       // Scan Lib folder for installed packages
       const libPath = path.join(this.workspaceRoot, 'Lib');
       await this.scanLibraryFolder(libPath);
@@ -266,10 +592,15 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
       const vendorPath = path.join(this.workspaceRoot, 'vendor');
       await this.scanVendorFolder(vendorPath);
 
-      // Check for available packages from a registry (mock data for now)
-      this.loadAvailablePackages();
+      // Include managed packages installed outside workspace folders.
+      await this.addManagedPackagesOutsideWorkspace();
 
-      // Check for updates (mock data for now)
+      this.installedPackages.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Load available packages from Aris index and compatible sources
+      await this.loadAvailablePackages();
+
+      // Check if newer versions are available from current index data.
       this.checkForUpdates();
     } catch (error) {
       console.error('Error scanning for packages:', error);
@@ -291,12 +622,14 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
           // Try to extract package info from the file
           const packageInfo = await this.extractPackageInfo(filePath);
 
-          this.installedPackages.push({
+          this.addOrUpdateInstalledPackage({
             name: path.basename(file, '.ahk'),
             version: packageInfo?.version || '1.0.0',
             description: packageInfo?.description || 'AHK Library',
+            author: packageInfo?.author,
             path: filePath,
-            lastModified: stats.mtime
+            lastModified: stats.mtime,
+            installLocationType: 'workspace'
           });
         }
       }
@@ -334,9 +667,10 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
             // No manifest file, use directory name
           }
 
-          this.installedPackages.push({
+          this.addOrUpdateInstalledPackage({
             ...packageInfo,
-            path: packagePath
+            path: packagePath,
+            installLocationType: 'vendor'
           });
         }
       }
@@ -383,51 +717,45 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
   }
 
   /**
-   * Load available packages from a registry (mock implementation)
+   * Load available packages from Aris index
    */
-  private loadAvailablePackages(): void {
-    // Mock data - in reality, this would fetch from a package registry
-    this.availablePackages = [
-      {
-        name: 'WinRT',
-        version: 'alpha',
-        description: 'Windows Runtime (WinRT) API bindings for AHK v2 - by Lexikos',
-        path: 'https://raw.githubusercontent.com/Lexikos/winrt.ahk/alpha/WinRT.ahk',
-        author: 'Lexikos',
-        repositoryUrl: 'https://github.com/Lexikos/winrt.ahk',
-        category: 'WinAPI'
-      },
-      {
-        name: 'JSON',
-        version: '2.0.0',
-        description: 'JSON parsing and stringification for AHK v2',
-        path: 'https://github.com/ahk-community/JSON.ahk',
-        author: 'AHK Community'
-      },
-      {
-        name: 'WinClip',
-        version: '1.5.0',
-        description: 'Advanced clipboard manipulation library',
-        path: 'https://github.com/ahk-community/WinClip',
-        author: 'AHK Community'
-      },
-      {
-        name: 'Socket',
-        version: '2.1.0',
-        description: 'TCP/UDP socket communication library',
-        path: 'https://github.com/ahk-community/Socket.ahk',
-        author: 'AHK Community'
-      }
-    ];
+  private async loadAvailablePackages(): Promise<void> {
+    try {
+      const results = await this.searchService.getIndexPackages(150);
+      this.availablePackages = results.map(result => this.mapSearchResultToPackageInfo(result));
+    } catch (error) {
+      console.warn('Failed to load Aris package index:', error);
+      this.availablePackages = [];
+    }
+  }
+
+  private mapSearchResultToPackageInfo(result: PackageSearchResult): PackageInfo {
+    return {
+      name: result.name,
+      version: result.version,
+      description: result.description,
+      author: result.author,
+      path: result.rawUrl || result.downloadUrl || result.repositoryUrl || result.installSpec,
+      lastModified: result.lastUpdated,
+      stars: result.stars,
+      category: result.category,
+      repositoryUrl: result.repositoryUrl,
+      sourceType: result.sourceType,
+      installSpec: result.installSpec,
+      source: result.source
+    };
   }
 
   /**
    * Check for package updates (mock implementation)
    */
   private checkForUpdates(): void {
-    // Mock data - check if any installed packages have updates
+    this.packagesWithUpdates = [];
+
     for (const installed of this.installedPackages) {
-      const available = this.availablePackages.find(pkg => pkg.name === installed.name);
+      const available = this.availablePackages.find(pkg =>
+        pkg.name.toLowerCase() === installed.name.toLowerCase()
+      );
       if (available && this.isNewerVersion(available.version, installed.version)) {
         this.packagesWithUpdates.push({
           ...installed,
@@ -441,15 +769,34 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
    * Compare version strings
    */
   private isNewerVersion(newVersion: string, currentVersion: string): boolean {
-    const newParts = newVersion.split('.').map(Number);
-    const currentParts = currentVersion.split('.').map(Number);
+    const normalizedNew = (newVersion || '').trim();
+    const normalizedCurrent = (currentVersion || '').trim();
 
+    // "latest" cannot be compared deterministically.
+    if (!normalizedNew || !normalizedCurrent) {
+      return false;
+    }
+    if (normalizedNew.toLowerCase() === 'latest' || normalizedCurrent.toLowerCase() === 'latest') {
+      return false;
+    }
+
+    const coercedNew = semver.coerce(normalizedNew);
+    const coercedCurrent = semver.coerce(normalizedCurrent);
+    if (coercedNew && coercedCurrent) {
+      return semver.gt(coercedNew.version, coercedCurrent.version);
+    }
+
+    const newParts = normalizedNew.split('.').map(Number);
+    const currentParts = normalizedCurrent.split('.').map(Number);
     for (let i = 0; i < Math.max(newParts.length, currentParts.length); i++) {
       const newPart = newParts[i] || 0;
       const currentPart = currentParts[i] || 0;
-
-      if (newPart > currentPart) return true;
-      if (newPart < currentPart) return false;
+      if (newPart > currentPart) {
+        return true;
+      }
+      if (newPart < currentPart) {
+        return false;
+      }
     }
 
     return false;
@@ -486,19 +833,41 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
         return; // User cancelled
       }
 
-      const targetDir = selectedLocation.location.path;
+      const installLocation = selectedLocation.location;
+      const targetDir = installLocation.path;
+      const includeFormat = this.getConfiguredIncludeFormatForLocation(installLocation.installLocationType);
 
       vscode.window.showInformationMessage(`Installing ${packageItem.packageName} to ${selectedLocation.label}...`);
 
       let installedPath: string;
+      let resolvedVersion = packageItem.version;
 
       // Handle different package sources
-      if (packageItem.packageType === 'available') {
-        // Install from available packages (likely from search results)
-        installedPath = await this.downloadPackageToLocation(packageItem.packageName, packageItem.packagePath, targetDir, packageItem.metadata?.repositoryUrl);
+      if (packageItem.metadata?.source) {
+        const targetPath = path.join(targetDir, `${packageItem.packageName}.ahk`);
+        const installResult = await this.installer.installPackageToPath(
+          packageItem.packageName,
+          packageItem.metadata.source,
+          targetPath
+        );
+        installedPath = installResult.installedPath;
+        resolvedVersion = installResult.resolvedVersion || resolvedVersion;
+      } else if (packageItem.packageType === 'available') {
+        // Install from available packages without explicit source metadata
+        installedPath = await this.downloadPackageToLocation(
+          packageItem.packageName,
+          packageItem.packagePath,
+          targetDir,
+          packageItem.metadata?.repositoryUrl
+        );
       } else if (packageItem.packagePath.startsWith('http')) {
         // Direct URL installation
-        installedPath = await this.downloadPackageToLocation(packageItem.packageName, packageItem.packagePath, targetDir, packageItem.metadata?.repositoryUrl);
+        installedPath = await this.downloadPackageToLocation(
+          packageItem.packageName,
+          packageItem.packagePath,
+          targetDir,
+          packageItem.metadata?.repositoryUrl
+        );
       } else {
         // Mock installation (existing package)
         installedPath = packageItem.packagePath;
@@ -509,22 +878,23 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
         // Add to installed packages list
         const packageInfo: PackageInfo = {
           name: packageItem.packageName,
-          version: packageItem.version,
+          version: resolvedVersion,
           description: packageItem.description,
           author: packageItem.metadata?.author,
           path: installedPath,
           stars: packageItem.metadata?.stars,
           category: packageItem.metadata?.category,
-          repositoryUrl: packageItem.metadata?.repositoryUrl
+          repositoryUrl: packageItem.metadata?.repositoryUrl,
+          sourceType: packageItem.metadata?.sourceType,
+          installSpec: packageItem.metadata?.installSpec,
+          source: packageItem.metadata?.source,
+          includeFormat,
+          installLocationType: installLocation.installLocationType,
+          managedByExtension: true
         };
 
-        // Check if package already exists in installed list
-        const existingIndex = this.installedPackages.findIndex(pkg => pkg.name === packageItem.packageName);
-        if (existingIndex >= 0) {
-          this.installedPackages[existingIndex] = packageInfo;
-        } else {
-          this.installedPackages.push(packageInfo);
-        }
+        this.addOrUpdateInstalledPackage(packageInfo);
+        await this.upsertManagedPackage(packageInfo);
 
         // Show success notification with "Open" and "Add #Include" buttons
         const action = await vscode.window.showInformationMessage(
@@ -536,7 +906,7 @@ export class PackageManagerProvider implements vscode.TreeDataProvider<PackageIt
 
         // Handle user action
         if (action === 'Add #Include') {
-          await this.addIncludeToActiveFile(packageItem.packageName);
+          await this.addIncludeToActiveFile(packageItem.packageName, includeFormat);
         } else if (action === 'Open') {
           try {
             // Try to open the installed file
@@ -756,15 +1126,16 @@ class ${packageName} {
   /**
    * Get available install locations
    */
-  private async getInstallLocations(): Promise<{ label: string; path: string; description: string }[]> {
-    const locations: { label: string; path: string; description: string }[] = [];
+  private async getInstallLocations(): Promise<InstallLocation[]> {
+    const locations: InstallLocation[] = [];
 
     // Workspace Lib folder (default)
     if (this.workspaceRoot) {
       locations.push({
         label: 'Workspace Lib',
         path: path.join(this.workspaceRoot, 'Lib'),
-        description: 'Project-specific library folder'
+        description: 'Project-specific library folder',
+        installLocationType: 'workspace'
       });
     }
 
@@ -777,7 +1148,8 @@ class ${packageName} {
       locations.push({
         label: 'User Library',
         path: userDocuments,
-        description: '%A_MyDocuments%/AutoHotkey/Lib - Available to all scripts'
+        description: '%A_MyDocuments%/AutoHotkey/Lib - Available to all scripts',
+        installLocationType: 'user'
       });
     }
 
@@ -787,7 +1159,8 @@ class ${packageName} {
       locations.push({
         label: 'System Library',
         path: ahkV2Lib,
-        description: 'AHK v2 installation Lib folder - Available globally'
+        description: 'AHK v2 installation Lib folder - Available globally',
+        installLocationType: 'system'
       });
     }
 
@@ -826,36 +1199,54 @@ class ${packageName} {
       'No'
     );
 
-    if (answer === 'Yes') {
-      try {
-        // Remove from installed packages list
-        const packageIndex = this.installedPackages.findIndex(pkg => pkg.name === packageItem.packageName);
-        if (packageIndex >= 0) {
-          const packageToRemove = this.installedPackages[packageIndex];
+    if (answer !== 'Yes') {
+      return;
+    }
 
-          // Remove the actual file if it exists and is in the workspace
-          if (packageToRemove.path.startsWith(this.workspaceRoot || '')) {
-            try {
-              await fs.unlink(packageToRemove.path);
-              vscode.window.showInformationMessage(`Removed ${packageItem.packageName} from ${packageToRemove.path}`);
-            } catch (fileError) {
-              // File might not exist or be protected
-              console.warn(`Could not remove file ${packageToRemove.path}:`, fileError);
-              vscode.window.showInformationMessage(`${packageItem.packageName} removed from package list (file may be protected)`);
-            }
-          } else {
-            vscode.window.showInformationMessage(`${packageItem.packageName} removed from package list`);
-          }
+    try {
+      let packageIndex = this.installedPackages.findIndex(pkg =>
+        pkg.name === packageItem.packageName &&
+        this.getPathKey(pkg.path) === this.getPathKey(packageItem.packagePath)
+      );
 
-          // Remove from installed packages array
-          this.installedPackages.splice(packageIndex, 1);
-        }
-
-        this.refresh();
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        vscode.window.showErrorMessage(`Failed to uninstall ${packageItem.packageName}: ${errorMessage}`);
+      if (packageIndex < 0) {
+        packageIndex = this.installedPackages.findIndex(pkg => pkg.name === packageItem.packageName);
       }
+
+      if (packageIndex < 0) {
+        vscode.window.showWarningMessage(`${packageItem.packageName} is no longer tracked in installed packages.`);
+        return;
+      }
+
+      const packageToRemove = this.installedPackages[packageIndex];
+      const canDeleteFile = packageToRemove.managedByExtension === true &&
+        await this.isPathSafeForManagedDeletion(packageToRemove.path);
+
+      if (canDeleteFile) {
+        try {
+          const stats = await fs.stat(packageToRemove.path);
+          if (stats.isDirectory()) {
+            await fs.rm(packageToRemove.path, { recursive: true, force: true });
+          } else {
+            await fs.unlink(packageToRemove.path);
+          }
+          vscode.window.showInformationMessage(`Removed ${packageItem.packageName} from ${packageToRemove.path}`);
+        } catch (fileError) {
+          console.warn(`Could not remove file ${packageToRemove.path}:`, fileError);
+          vscode.window.showInformationMessage(`${packageItem.packageName} removed from package list (file may be protected)`);
+        }
+      } else {
+        vscode.window.showInformationMessage(
+          `${packageItem.packageName} removed from package list. File was not deleted because it was not manager-owned.`
+        );
+      }
+
+      this.installedPackages.splice(packageIndex, 1);
+      await this.removeManagedPackageByPath(packageToRemove.path);
+      this.refresh();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      vscode.window.showErrorMessage(`Failed to uninstall ${packageItem.packageName}: ${errorMessage}`);
     }
   }
 
@@ -867,20 +1258,25 @@ class ${packageName} {
       vscode.window.showInformationMessage(`Updating ${packageItem.packageName}...`);
 
       // Find the installed package to update
-      const installedPackage = this.installedPackages.find(pkg => pkg.name === packageItem.packageName);
+      const installedPackage = this.installedPackages.find(pkg =>
+        pkg.name.toLowerCase() === packageItem.packageName.toLowerCase() &&
+        this.getPathKey(pkg.path) === this.getPathKey(packageItem.packagePath)
+      ) || this.installedPackages.find(pkg => pkg.name.toLowerCase() === packageItem.packageName.toLowerCase());
       if (!installedPackage) {
         throw new Error(`Package ${packageItem.packageName} not found in installed packages`);
       }
 
       let newVersion = packageItem.version;
-      let downloadUrl = packageItem.packagePath;
-      let repositoryUrl = packageItem.metadata?.repositoryUrl;
+      const downloadUrl = packageItem.packagePath;
+      const repositoryUrl = packageItem.metadata?.repositoryUrl;
+      const installSource = packageItem.metadata?.source || installedPackage.source;
+      const previousPath = installedPackage.path;
 
       // If it's an update from the updates list, extract new version
       if (packageItem.packageType === 'updates') {
-        const versionMatch = packageItem.version.match(/.*→\s*([\d.]+)/);
-        if (versionMatch) {
-          newVersion = versionMatch[1];
+        const [, maybeNewVersion] = packageItem.version.split('→').map(part => part.trim());
+        if (maybeNewVersion) {
+          newVersion = maybeNewVersion;
         }
       }
 
@@ -892,15 +1288,50 @@ class ${packageName} {
         console.warn(`Could not create backup:`, backupError);
       }
 
-      // Download new version if we have a repository URL or direct URL
-      if (repositoryUrl || downloadUrl.startsWith('http')) {
+      // Download new version if we have source metadata, repository URL, or direct URL
+      if (installSource) {
         try {
-          // Use the same download logic as install
-          const updatedPath = await this.downloadPackageFromUrl(packageItem.packageName, downloadUrl, repositoryUrl);
+          const targetPath = installedPackage.path.endsWith('.ahk')
+            ? installedPackage.path
+            : path.join(path.dirname(installedPackage.path), `${packageItem.packageName}.ahk`);
+
+          const updatedResult = await this.installer.installPackageToPath(
+            packageItem.packageName,
+            installSource,
+            targetPath
+          );
+
+          installedPackage.path = updatedResult.installedPath;
+          newVersion = updatedResult.resolvedVersion || newVersion;
+          installedPackage.version = newVersion;
+          installedPackage.source = installSource;
+          installedPackage.repositoryUrl = repositoryUrl || installedPackage.repositoryUrl;
+          installedPackage.managedByExtension = true;
+
+          vscode.window.showInformationMessage(`${packageItem.packageName} updated to version ${newVersion}`);
+        } catch (downloadError) {
+          const errorMessage = downloadError instanceof Error ? downloadError.message : 'Unknown error';
+          vscode.window.showErrorMessage(`Failed to download updated version: ${errorMessage}`);
+          return;
+        }
+      } else if (repositoryUrl || downloadUrl.startsWith('http')) {
+        try {
+          // Use the same download logic as install, but keep current install location.
+          const targetPath = installedPackage.path.endsWith('.ahk')
+            ? installedPackage.path
+            : path.join(path.dirname(installedPackage.path), `${packageItem.packageName}.ahk`);
+          const updatedPath = await this.downloadPackageFromUrlToPath(
+            packageItem.packageName,
+            downloadUrl,
+            targetPath,
+            repositoryUrl
+          );
 
           // Update the package info
           installedPackage.path = updatedPath;
           installedPackage.version = newVersion;
+          installedPackage.repositoryUrl = repositoryUrl || installedPackage.repositoryUrl;
+          installedPackage.managedByExtension = true;
 
           vscode.window.showInformationMessage(`${packageItem.packageName} updated to version ${newVersion}`);
         } catch (downloadError) {
@@ -912,6 +1343,16 @@ class ${packageName} {
         // For packages without update sources, just update version info
         installedPackage.version = newVersion;
         vscode.window.showInformationMessage(`${packageItem.packageName} version updated to ${newVersion}`);
+      }
+
+      installedPackage.lastModified = new Date();
+
+      // Keep managed package state in sync with path/version/source changes.
+      if (this.getPathKey(previousPath) !== this.getPathKey(installedPackage.path)) {
+        this.managedPackagesByPath.delete(this.getPathKey(previousPath));
+      }
+      if (installedPackage.managedByExtension || installedPackage.source || installedPackage.installSpec) {
+        await this.upsertManagedPackage(installedPackage);
       }
 
       // Show success notification with "Open" button
@@ -945,7 +1386,7 @@ class ${packageName} {
   /**
    * Add #Include line to active file or prompt user to select a file
    */
-  private async addIncludeToActiveFile(packageName: string): Promise<void> {
+  private async addIncludeToActiveFile(packageName: string, includeFormat?: string): Promise<void> {
     try {
       // Try to get the active text editor
       let targetDocument = vscode.window.activeTextEditor?.document;
@@ -985,7 +1426,8 @@ class ${packageName} {
 
       // Now insert the #Include line
       const result = await insertIncludeLine(targetDocument, {
-        packageName
+        packageName,
+        includeFormat: includeFormat || this.getIncludeFormatForPackage(packageName)
       });
 
       // Show result to user
@@ -1059,8 +1501,7 @@ class ${packageName} {
   }
 
   private getIncludePreview(packageName: string): string {
-    const config = vscode.workspace.getConfiguration('ahkv2Toolbox');
-    const includeFormat = config.get<string>('includeFormat', 'Lib/{name}.ahk');
+    const includeFormat = this.getIncludeFormatForPackage(packageName);
     return `#Include ${includeFormat.replace('{name}', packageName)}`;
   }
 
@@ -1140,7 +1581,10 @@ class ${packageName} {
 
       if (packageItem.packageType === 'installed') {
         actions.onAddInclude = async () => {
-          await this.addIncludeToActiveFile(packageItem.packageName);
+          await this.addIncludeToActiveFile(
+            packageItem.packageName,
+            installedInfo?.includeFormat || packageItem.metadata?.includeFormat
+          );
         };
       }
 
@@ -1184,7 +1628,7 @@ class ${packageName} {
       // Show input box with search options
       const searchQuery = await vscode.window.showInputBox({
         prompt: 'Search for AHK v2 packages',
-        placeHolder: 'Enter package name, keyword, or leave empty for popular packages...',
+        placeHolder: 'Name, Author/Name, github:Author/Repo, gist:hash, forums:t=123, or archive URL',
         value: this.lastSearchQuery
       });
 
@@ -1237,7 +1681,7 @@ class ${packageName} {
               filters.category = categoryOption.value;
             }
 
-            progress.report({ increment: 30, message: 'Fetching results from GitHub...' });
+            progress.report({ increment: 30, message: 'Resolving packages from Aris sources...' });
 
             // Perform the search
             const results = await this.searchService.searchPackages(
@@ -1249,17 +1693,7 @@ class ${packageName} {
             progress.report({ increment: 60, message: 'Processing results...' });
 
             // Convert search results to available packages
-            this.availablePackages = results.map(result => ({
-              name: result.name,
-              version: result.version,
-              description: result.description,
-              author: result.author,
-              path: result.rawUrl || result.downloadUrl || result.repositoryUrl,
-              lastModified: result.lastUpdated,
-              stars: result.stars,
-              category: result.category,
-              repositoryUrl: result.repositoryUrl
-            }));
+            this.availablePackages = results.map(result => this.mapSearchResultToPackageInfo(result));
 
             // Mark that we're showing search results
             this.isShowingSearchResults = true;
@@ -1303,8 +1737,9 @@ class ${packageName} {
   clearSearch(): void {
     this.isShowingSearchResults = false;
     this.lastSearchQuery = '';
-    this.loadAvailablePackages();
-    this._onDidChangeTreeData.fire();
+    void this.loadAvailablePackages().finally(() => {
+      this._onDidChangeTreeData.fire();
+    });
     vscode.window.showInformationMessage('Search results cleared');
   }
 
@@ -1312,7 +1747,10 @@ class ${packageName} {
    * Open repository URL in browser
    */
   async openRepository(packageItem: PackageItem): Promise<void> {
-    const repoUrl = packageItem.metadata?.repositoryUrl;
+    const source = packageItem.metadata?.source;
+    const repoUrl = packageItem.metadata?.repositoryUrl
+      || (source?.type === 'github' && source.repository ? `https://github.com/${source.repository}` : undefined)
+      || source?.url;
     if (repoUrl) {
       vscode.env.openExternal(vscode.Uri.parse(repoUrl));
     } else {
