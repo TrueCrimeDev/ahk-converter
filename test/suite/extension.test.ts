@@ -2,14 +2,15 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 
 suite('Extension Test Suite', () => {
+  const extensionId = 'TrueCrimeAudit.ahk-converter';
   vscode.window.showInformationMessage('Start all tests.');
 
   test('Extension should be present', () => {
-    assert.ok(vscode.extensions.getExtension('TrueCrimeAudit.ahkv2-toolbox'));
+    assert.ok(vscode.extensions.getExtension(extensionId));
   });
 
   test('Extension should activate', async () => {
-    const ext = vscode.extensions.getExtension('TrueCrimeAudit.ahkv2-toolbox');
+    const ext = vscode.extensions.getExtension(extensionId);
     assert.ok(ext);
     await ext!.activate();
     assert.strictEqual(ext!.isActive, true);
@@ -48,7 +49,7 @@ suite('Extension Test Suite', () => {
   });
 
   test('TreeView providers should be registered', async () => {
-    const ext = vscode.extensions.getExtension('TrueCrimeAudit.ahkv2-toolbox');
+    const ext = vscode.extensions.getExtension(extensionId);
     await ext?.activate();
 
     const packageJSON = ext?.packageJSON;

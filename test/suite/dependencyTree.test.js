@@ -2,12 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const assert = require("assert");
 const vscode = require("vscode");
-const dependencyTreeProvider_1 = require("../../src/dependencyTreeProvider");
+const dependencyTreeProvider_1 = require("../../dist/src/dependencyTreeProvider");
 suite('Dependency Tree Test Suite', () => {
+    const extensionId = 'TrueCrimeAudit.ahk-converter';
     let provider;
     let context;
     suiteSetup(() => {
-        const ext = vscode.extensions.getExtension('TrueCrimeAudit.ahkv2-toolbox');
+        const ext = vscode.extensions.getExtension(extensionId);
         assert.ok(ext, 'Extension should be available');
         context = ext.exports?.context || createMockContext();
     });

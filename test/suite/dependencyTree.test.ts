@@ -3,11 +3,12 @@ import * as vscode from 'vscode';
 import { DependencyTreeProvider, DependencyTreeItem } from '../../src/dependencyTreeProvider';
 
 suite('Dependency Tree Test Suite', () => {
+  const extensionId = 'TrueCrimeAudit.ahk-converter';
   let provider: DependencyTreeProvider;
   let context: vscode.ExtensionContext;
 
   suiteSetup(() => {
-    const ext = vscode.extensions.getExtension('TrueCrimeAudit.ahkv2-toolbox');
+    const ext = vscode.extensions.getExtension(extensionId);
     assert.ok(ext, 'Extension should be available');
     context = ext!.exports?.context || createMockContext();
   });

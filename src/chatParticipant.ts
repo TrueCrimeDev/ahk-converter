@@ -929,8 +929,8 @@ export function registerAHKChatParticipant(
     }
   );
 
-  // Set icon for the participant (optional)
-  chatParticipant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'src', 'AHK_Code.svg');
+  // Use a packaged icon that exists in all builds.
+  chatParticipant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'autohotkey2.svg');
 
   return chatParticipant;
 }

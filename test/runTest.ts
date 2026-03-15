@@ -4,8 +4,8 @@ import { runTests } from '@vscode/test-electron';
 async function main() {
   try {
     const extensionDevelopmentPath = [
-      path.resolve(__dirname, '../../'),
-      path.resolve(__dirname, '../../test/fixtures/extensions/thqby.vscode-autohotkey2-lsp')
+      path.resolve(__dirname, '..'),
+      path.resolve(__dirname, './fixtures/extensions/thqby.vscode-autohotkey2-lsp')
     ];
     const extensionTestsPath = path.resolve(__dirname, './suite/index');
 

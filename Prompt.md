@@ -13,5 +13,4 @@ Comma - separated topical terms
 
 # Remove the linebreaks in the webview 
 
-# Remove the file name too that's at the top, it's not working out correctly. For example: 
-File: c:\Users\uphol\Documents\Design\Coding\ahk-converter\
+# Remove the file name too that's at the top, it's not working out correctly.

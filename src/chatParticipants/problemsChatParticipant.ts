@@ -314,6 +314,7 @@ export class ProblemsChatParticipant {
     const chatParticipant = vscode.chat.createChatParticipant('ahkv2-toolbox.problems-assistant', async (request, context, stream, token) => {
       await participant.handleRequest(request.prompt, context, stream, token);
     });
+    chatParticipant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'autohotkey2.svg');
 
     context.subscriptions.push(chatParticipant);
   }

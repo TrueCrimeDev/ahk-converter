@@ -1,11 +1,12 @@
-/************************************************************************
- * @description: YAML/JSON格式字符串序列化和反序列化, 修改自[HotKeyIt/Yaml](https://github.com/HotKeyIt/Yaml)
- * 修复了一些YAML解析的bug, 增加了对true/false/null类型的支持, 保留了数值的类型
+/**
+ * @file YAML.ahk
+ * @description YAML/JSON格式字符串序列化和反序列化, 修改自[HotKeyIt/Yaml](https://github.com/HotKeyIt/Yaml) 修复了一些YAML解析的bug, 增加了对true/false/null类型的支持, 保留了数值的类型
  * @author thqby, HotKeyIt
- * @date 2025/08/22
  * @version 1.0.9
- ***********************************************************************/
-
+ * @date 2025/08/22
+ * @repository https://github.com/HotKeyIt/Yaml
+ * @requires Autohotkey v2.0
+ */
 class YAML {
 	static null := ComValue(1, 0), true := ComValue(0xB, 1), false := ComValue(0xB, 0)
 

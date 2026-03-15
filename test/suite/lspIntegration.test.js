@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const assert = require("assert");
 const vscode = require("vscode");
-const lspIntegration_1 = require("../../src/lspIntegration");
+const lspIntegration_1 = require("../../dist/src/lspIntegration");
 suite('LSP Integration Test Suite', () => {
     test('LSP Integration should be singleton', () => {
         const instance1 = lspIntegration_1.AHKLSPIntegration.getInstance();

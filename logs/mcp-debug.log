@@ -3116,3 +3116,27 @@
 [2026-01-04T02:28:18.222Z] | tools.list | SUCCESS | Returned 31 tools | mode="stdio"
 [2026-01-04T02:28:18.228Z] | resources.list | START | Enumerating exposed resources
 [2026-01-04T02:28:18.228Z] | resources.list | SUCCESS | Returned 11 resources
+[2026-01-10T18:15:17.227Z] | server.initialize | START | Loading AutoHotkey documentation
+[2026-01-10T18:15:17.248Z] | server.initialize | SUCCESS | Documentation cache ready
+[2026-01-10T18:15:17.249Z] | server.start | START | Launching stdio transport (Claude Desktop)
+[2026-01-10T18:15:17.250Z] | server.start | SUCCESS | Stdio transport ready (Claude Desktop)
+[2026-01-10T18:15:17.563Z] | tools.list | START | Standard tool listing
+[2026-01-10T18:15:17.563Z] | tools.list | SUCCESS | Returned 31 tools | mode="stdio"
+[2026-01-10T18:15:17.640Z] | resources.list | START | Enumerating exposed resources
+[2026-01-10T18:15:17.640Z] | resources.list | SUCCESS | Returned 11 resources
+[2026-01-12T23:37:23.709Z] | server.initialize | START | Loading AutoHotkey documentation
+[2026-01-12T23:37:23.713Z] | server.initialize | SUCCESS | Documentation cache ready
+[2026-01-12T23:37:23.714Z] | server.start | START | Launching stdio transport (Claude Desktop)
+[2026-01-12T23:37:23.714Z] | server.start | SUCCESS | Stdio transport ready (Claude Desktop)
+[2026-01-12T23:37:23.824Z] | tools.list | START | Standard tool listing
+[2026-01-12T23:37:23.825Z] | tools.list | SUCCESS | Returned 32 tools | mode="stdio"
+[2026-01-12T23:37:24.102Z] | resources.list | START | Enumerating exposed resources
+[2026-01-12T23:37:24.102Z] | resources.list | SUCCESS | Returned 11 resources
+[2026-01-19T01:37:08.317Z] | server.initialize | START | Loading AutoHotkey documentation
+[2026-01-19T01:37:08.320Z] | server.initialize | SUCCESS | Documentation cache ready
+[2026-01-19T01:37:08.320Z] | server.start | START | Launching stdio transport (Claude Desktop)
+[2026-01-19T01:37:08.321Z] | server.start | SUCCESS | Stdio transport ready (Claude Desktop)
+[2026-01-19T01:37:11.226Z] | tools.list | START | Standard tool listing
+[2026-01-19T01:37:11.227Z] | tools.list | SUCCESS | Returned 32 tools | mode="stdio"
+[2026-01-19T01:37:11.914Z] | resources.list | START | Enumerating exposed resources
+[2026-01-19T01:37:11.915Z] | resources.list | SUCCESS | Returned 11 resources

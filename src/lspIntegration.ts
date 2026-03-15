@@ -46,15 +46,21 @@ export class AHKLSPIntegration {
   public async isLSPAvailable(): Promise<boolean> {
     if (!this.lspExtension) {
       this.lspExtension = vscode.extensions.getExtension('thqby.vscode-autohotkey2-lsp');
-      if (this.lspExtension && !this.lspExtension.isActive) {
+    }
+
+    if (this.lspExtension) {
+      if (!this.lspExtension.isActive) {
         try {
           await this.lspExtension.activate();
           this.isAvailable = true;
         } catch {
           this.isAvailable = false;
         }
+      } else {
+        this.isAvailable = true;
       }
     }
+
     return this.isAvailable;
   }
 

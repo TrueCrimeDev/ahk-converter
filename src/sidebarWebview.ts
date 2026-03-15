@@ -25,7 +25,7 @@ export class AHKv2ToolboxWebview {
       return;
     }
 
-    const iconPath = vscode.Uri.file(path.join(this._context.extensionPath, 'src', 'AHK_Code.svg'));
+    const iconPath = vscode.Uri.file(path.join(this._context.extensionPath, 'media', 'autohotkey2.svg'));
     this._panel = vscode.window.createWebviewPanel(
       'ahkv2Toolbox',
       'AHKv2 Toolbox',

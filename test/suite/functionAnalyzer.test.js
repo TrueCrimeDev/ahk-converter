@@ -2,8 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const assert = require("assert");
 const vscode = require("vscode");
-const functionAnalyzer_1 = require("../../src/functionAnalyzer");
-const functionMetadata_1 = require("../../src/models/functionMetadata");
+const functionAnalyzer_1 = require("../../dist/src/functionAnalyzer");
+const functionMetadata_1 = require("../../dist/src/models/functionMetadata");
 suite('Function Analyzer Test Suite', () => {
     test('Should parse simple function with no parameters', () => {
         const code = `SimpleFunction() {
@@ -117,7 +117,7 @@ suite('Function Analyzer Test Suite', () => {
         assert.strictEqual(metadata[0].staticVariables.length >= 2, true);
         const counter = metadata[0].staticVariables.find(v => v.name === 'counter');
         assert.ok(counter);
-        assert.strictEqual(counter.scope, functionMetadata_1.VariableScope.Static);
+        assert.strictEqual(counter.scopeValue, functionMetadata_1.VariableScope.Static);
         assert.strictEqual(counter.hasInitializer, true);
     });
     test('Should detect local variables in assignment chains', () => {

@@ -1,9 +1,9 @@
 {
-  "name": "ahk-converter",
-  "displayName": "AHK Converter",
+  "name": "ahk-toolkit",
+  "displayName": "AHK Toolkit",
   "icon": "media/converter.png",
-  "description": "Convert AutoHotkey v1 scripts to v2 using the community converter and AutoHotkey v2.",
-  "publisher": "TrueCrimeAudit",
+  "description": "This tool helps convert outdated AHK v1 to modern AHK v2 automatically along with other tools like dependency mapping, package management, and a built-in Copilot Chat participant.",
+  "publisher": "truecrimedev",
   "version": "0.5.0",
   "engines": {
     "vscode": "^1.84.0"
@@ -37,7 +37,7 @@
         {
           "id": "ahkv2-toolbox",
           "title": "AHKv2 Toolbox",
-          "icon": "src/sidebar.svg"
+          "icon": "media/autohotkey2.svg"
         }
       ]
     },
@@ -47,7 +47,7 @@
           "id": "ahkv2Toolbox",
           "name": "Toolbox",
           "type": "webview",
-          "icon": "$(tools)"
+          "icon": "media/autohotkey2.svg"
         },
         {
           "id": "ahkPackageManager",
