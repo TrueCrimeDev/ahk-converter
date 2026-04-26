@@ -1,10 +1,10 @@
 {
-  "name": "ahk-toolkit",
-  "displayName": "AHK Toolkit",
+  "name": "ahk-converter",
+  "displayName": "AHK Converter",
   "icon": "media/converter.png",
   "description": "This tool helps convert outdated AHK v1 to modern AHK v2 automatically along with other tools like dependency mapping, package management, and a built-in Copilot Chat participant.",
-  "publisher": "truecrimedev",
-  "version": "0.5.0",
+  "publisher": "TrueCrimeAudit",
+  "version": "0.9.4",
   "engines": {
     "vscode": "^1.84.0"
   },
@@ -36,8 +36,8 @@
       "activitybar": [
         {
           "id": "ahkv2-toolbox",
-          "title": "AHKv2 Toolbox",
-          "icon": "media/autohotkey2.svg"
+          "title": "AHK",
+          "icon": "src/sidebar.svg"
         }
       ]
     },
@@ -47,7 +47,7 @@
           "id": "ahkv2Toolbox",
           "name": "Toolbox",
           "type": "webview",
-          "icon": "media/autohotkey2.svg"
+          "icon": "src/sidebar.svg"
         },
         {
           "id": "ahkPackageManager",
@@ -842,7 +842,7 @@
   "scripts": {
     "prepare": "echo Skipping husky install on publish",
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && node scripts/copy-dllcall-signatures.js",
     "watch": "tsc -watch -p ./",
     "dev": "npm run watch",
     "test": "tsc -p ./ && node ./test/runTest.js",

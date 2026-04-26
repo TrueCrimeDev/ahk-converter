@@ -13,6 +13,7 @@ src/**
 test/**
 docs/**
 scripts/**
+!scripts/uia-inspector.ahk
 examples/**
 logs/**
 *.log

@@ -2,8 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const assert = require("assert");
 const vscode = require("vscode");
+const manifest = require("../../package.json");
 suite('Extension Test Suite', () => {
-    const extensionId = 'TrueCrimeAudit.ahk-converter';
+    const extensionId = `${manifest.publisher}.${manifest.name}`;
     vscode.window.showInformationMessage('Start all tests.');
     test('Extension should be present', () => {
         assert.ok(vscode.extensions.getExtension(extensionId));

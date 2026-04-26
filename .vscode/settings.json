@@ -35,11 +35,12 @@
     }
   },
   "workbench.colorCustomizations": {
+    "terminal.ansiBrightYellow": "#FF8C00",
     "debugConsole.infoForeground": "#00FF00",
     "debugConsole.warningForeground": "#fdec34ff",
     "debugConsole.errorForeground": "#ff2828ff"
   },
-  "workbench.colorTheme": "Default Dark Modern",
+  "workbench.colorTheme": "Dark Modern",
   // Extension Test Runner configuration
   "extension-test-runner.debugOptions": {
     "args": [

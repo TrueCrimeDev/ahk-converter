@@ -6,6 +6,7 @@
   ],
   "settings": {
     "workbench.colorCustomizations": {
+      "terminal.ansiBrightYellow": "#FFCB6B",
       "debugConsole.infoForeground": "#00FF00",
       "debugConsole.warningForeground": "#fdec34ff",
       "debugConsole.errorForeground": "#ff2828ff",
@@ -41,7 +42,6 @@
       "terminal.ansiBrightMagenta": "#C792EA",
       "terminal.ansiBrightRed": "#F07178",
       "terminal.ansiBrightWhite": "#FFFFFF",
-      "terminal.ansiBrightYellow": "#FFCB6B",
       "terminal.ansiCyan": "#89DDFF",
       "terminal.ansiGreen": "#C3E88D",
       "terminal.ansiMagenta": "#C792EA",

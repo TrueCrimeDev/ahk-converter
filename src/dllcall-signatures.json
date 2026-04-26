@@ -1,0 +1,207 @@
+{
+  "User32": {
+    "MessageBoxW": {
+      "params": [
+        { "name": "hWnd", "type": "Ptr", "desc": "Handle to owner window, 0 for no owner" },
+        { "name": "lpText", "type": "Str", "desc": "Message text" },
+        { "name": "lpCaption", "type": "Str", "desc": "Dialog title" },
+        { "name": "uType", "type": "UInt", "desc": "Dialog type flags" }
+      ],
+      "return": "Int",
+      "desc": "Displays a modal dialog box with a message and buttons"
+    },
+    "FindWindowW": {
+      "params": [
+        { "name": "lpClassName", "type": "Str", "desc": "Window class name, or empty string" },
+        { "name": "lpWindowName", "type": "Str", "desc": "Window title text" }
+      ],
+      "return": "Ptr",
+      "desc": "Retrieves handle to top-level window by class/title"
+    },
+    "GetForegroundWindow": {
+      "params": [],
+      "return": "Ptr",
+      "desc": "Retrieves handle to the foreground window"
+    },
+    "SetForegroundWindow": {
+      "params": [
+        { "name": "hWnd", "type": "Ptr", "desc": "Handle to the window to activate" }
+      ],
+      "return": "Int",
+      "desc": "Brings the specified window to the foreground"
+    },
+    "SendMessageW": {
+      "params": [
+        { "name": "hWnd", "type": "Ptr", "desc": "Handle to the target window" },
+        { "name": "Msg", "type": "UInt", "desc": "Message identifier" },
+        { "name": "wParam", "type": "Ptr", "desc": "Additional message-specific info" },
+        { "name": "lParam", "type": "Ptr", "desc": "Additional message-specific info" }
+      ],
+      "return": "Ptr",
+      "desc": "Sends a message to a window and waits for processing"
+    },
+    "PostMessageW": {
+      "params": [
+        { "name": "hWnd", "type": "Ptr", "desc": "Handle to the target window" },
+        { "name": "Msg", "type": "UInt", "desc": "Message identifier" },
+        { "name": "wParam", "type": "Ptr", "desc": "Additional message-specific info" },
+        { "name": "lParam", "type": "Ptr", "desc": "Additional message-specific info" }
+      ],
+      "return": "Int",
+      "desc": "Posts a message to a window queue and returns immediately"
+    },
+    "GetWindowTextW": {
+      "params": [
+        { "name": "hWnd", "type": "Ptr", "desc": "Handle to the window" },
+        { "name": "lpString", "type": "Str", "desc": "Buffer to receive text" },
+        { "name": "nMaxCount", "type": "Int", "desc": "Max characters to copy including null" }
+      ],
+      "return": "Int",
+      "desc": "Copies the title bar text of a window into a buffer"
+    },
+    "ShowWindow": {
+      "params": [
+        { "name": "hWnd", "type": "Ptr", "desc": "Handle to the window" },
+        { "name": "nCmdShow", "type": "Int", "desc": "Show state" }
+      ],
+      "return": "Int",
+      "desc": "Sets the show state of a window"
+    },
+    "GetCursorPos": {
+      "params": [
+        { "name": "lpPoint", "type": "Ptr", "desc": "Pointer to POINT struct receiving coordinates" }
+      ],
+      "return": "Int",
+      "desc": "Retrieves the cursor position in screen coordinates"
+    },
+    "SetCursorPos": {
+      "params": [
+        { "name": "X", "type": "Int", "desc": "New X coordinate in screen pixels" },
+        { "name": "Y", "type": "Int", "desc": "New Y coordinate in screen pixels" }
+      ],
+      "return": "Int",
+      "desc": "Sets the cursor position in screen coordinates"
+    },
+    "GetWindowRect": {
+      "params": [
+        { "name": "hWnd", "type": "Ptr", "desc": "Handle to the window" },
+        { "name": "lpRect", "type": "Ptr", "desc": "Pointer to RECT struct receiving window area" }
+      ],
+      "return": "Int",
+      "desc": "Retrieves the bounding rectangle of a window"
+    }
+  },
+  "Kernel32": {
+    "GetTickCount": {
+      "params": [],
+      "return": "UInt",
+      "desc": "Retrieves milliseconds since system start"
+    },
+    "GetTickCount64": {
+      "params": [],
+      "return": "UInt64",
+      "desc": "Retrieves milliseconds since system start without wrap"
+    },
+    "Sleep": {
+      "params": [
+        { "name": "dwMilliseconds", "type": "UInt", "desc": "Milliseconds to sleep" }
+      ],
+      "return": "void",
+      "desc": "Suspends the current thread for the specified time"
+    },
+    "GetLastError": {
+      "params": [],
+      "return": "UInt",
+      "desc": "Retrieves the calling thread's last error code"
+    },
+    "GetModuleHandleW": {
+      "params": [
+        { "name": "lpModuleName", "type": "Str", "desc": "Module name, or empty for calling process" }
+      ],
+      "return": "Ptr",
+      "desc": "Retrieves a module handle for the specified module"
+    },
+    "LoadLibraryW": {
+      "params": [
+        { "name": "lpLibFileName", "type": "Str", "desc": "Name or path of the DLL" }
+      ],
+      "return": "Ptr",
+      "desc": "Loads a DLL into the calling process"
+    },
+    "FreeLibrary": {
+      "params": [
+        { "name": "hLibModule", "type": "Ptr", "desc": "Handle to the loaded DLL" }
+      ],
+      "return": "Int",
+      "desc": "Frees a loaded DLL module"
+    },
+    "GetProcAddress": {
+      "params": [
+        { "name": "hModule", "type": "Ptr", "desc": "Handle to the DLL" },
+        { "name": "lpProcName", "type": "AStr", "desc": "Function or variable name" }
+      ],
+      "return": "Ptr",
+      "desc": "Retrieves the address of a function from a DLL"
+    },
+    "CloseHandle": {
+      "params": [
+        { "name": "hObject", "type": "Ptr", "desc": "Handle to close" }
+      ],
+      "return": "Int",
+      "desc": "Closes an open object handle"
+    }
+  },
+  "Shell32": {
+    "ShellExecuteW": {
+      "params": [
+        { "name": "hwnd", "type": "Ptr", "desc": "Parent window handle" },
+        { "name": "lpOperation", "type": "Str", "desc": "Action such as open or runas" },
+        { "name": "lpFile", "type": "Str", "desc": "File or URL to act on" },
+        { "name": "lpParameters", "type": "Str", "desc": "Command line parameters" },
+        { "name": "lpDirectory", "type": "Str", "desc": "Working directory" },
+        { "name": "nShowCmd", "type": "Int", "desc": "Show state" }
+      ],
+      "return": "Ptr",
+      "desc": "Opens, prints, or launches a file or URL"
+    }
+  },
+  "Dwmapi": {
+    "DwmSetWindowAttribute": {
+      "params": [
+        { "name": "hwnd", "type": "Ptr", "desc": "Handle to the window" },
+        { "name": "dwAttribute", "type": "UInt", "desc": "Attribute to set" },
+        { "name": "pvAttribute", "type": "Ptr", "desc": "Pointer to attribute value" },
+        { "name": "cbAttribute", "type": "UInt", "desc": "Size of attribute value in bytes" }
+      ],
+      "return": "Int",
+      "desc": "Sets Desktop Window Manager rendering attributes for a window"
+    }
+  },
+  "Advapi32": {
+    "RegOpenKeyExW": {
+      "params": [
+        { "name": "hKey", "type": "Ptr", "desc": "Handle to open key" },
+        { "name": "lpSubKey", "type": "Str", "desc": "Subkey name" },
+        { "name": "ulOptions", "type": "UInt", "desc": "Reserved, use 0" },
+        { "name": "samDesired", "type": "UInt", "desc": "Access mask" },
+        { "name": "phkResult", "type": "Ptr", "desc": "Pointer receiving opened key handle" }
+      ],
+      "return": "Int",
+      "desc": "Opens a registry key"
+    }
+  },
+  "Ole32": {
+    "CoInitialize": {
+      "params": [
+        { "name": "pvReserved", "type": "Ptr", "desc": "Reserved, must be 0" }
+      ],
+      "return": "Int",
+      "desc": "Initializes the COM library on the current thread"
+    },
+    "CoUninitialize": {
+      "params": [],
+      "return": "void",
+      "desc": "Closes the COM library on the current thread"
+    }
+  }
+}

@@ -502,7 +502,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource} https://cdn.jsdelivr.net;">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -627,7 +627,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource} https://cdn.jsdelivr.net;">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -954,7 +954,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource} https://cdn.jsdelivr.net;">
   <title>Settings</title>
   <link rel="stylesheet" href="${codiconsUri}">
   <script type="module" nonce="${scriptNonce}" src="${toolkitUri}"></script>
@@ -990,13 +990,13 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
       display: flex;
       align-items: center;
-      gap: 4px;
+      gap: 10px;
       flex-shrink: 0;
     }
 
     .header h2 {
       margin: 0;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       color: var(--vscode-sideBarTitle-foreground);
       flex: 1;
@@ -1091,6 +1091,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 
     /* Native HTML form controls */
     input[type="text"],
+    input[type="password"],
     select {
       width: 100%;
       background: var(--vscode-input-background);
@@ -1111,13 +1112,15 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
     }
 
     input[type="text"]:focus,
+    input[type="password"]:focus,
     select:focus {
       outline: 1px solid var(--vscode-focusBorder);
       outline-offset: -1px;
       border-color: var(--vscode-focusBorder);
     }
 
-    input[type="text"]::placeholder {
+    input[type="text"]::placeholder,
+    input[type="password"]::placeholder {
       color: var(--vscode-input-placeholderForeground);
     }
 
@@ -1183,16 +1186,16 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
       border-color: var(--vscode-widget-border, #3c3c3c);
     }
 
-    /* Button group with vertical stack */
+    /* Button group in a single row */
     .button-group {
       display: flex;
-      flex-direction: column;
+      flex-direction: row;
       gap: 10px;
       margin-top: 16px;
     }
 
     .button-group vscode-button {
-      width: 100%;
+      flex: 1;
       height: 32px;
       margin: 0;
     }
@@ -1229,34 +1232,45 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 
     /* Back button (icon style) */
     .back-btn {
-      width: 28px;
       height: 28px;
-      min-width: 28px;
       min-height: 28px;
-      padding: 0;
+      padding: 0 8px;
       display: flex;
       align-items: center;
+      gap: 6px;
       justify-content: center;
       cursor: pointer;
-      background: transparent;
-      border: none;
+      background: var(--vscode-input-background);
+      border: 1px solid var(--vscode-input-border, #3e3e42);
       border-radius: 4px;
-      color: var(--vscode-foreground);
-      transition: background 0.15s ease;
+      color: var(--vscode-descriptionForeground);
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
 
     .back-btn:hover {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--vscode-list-hoverBackground);
+      border-color: var(--vscode-focusBorder);
+      color: var(--vscode-foreground);
     }
 
     .back-btn:active {
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--vscode-list-activeSelectionBackground);
+      color: var(--vscode-list-activeSelectionForeground);
+    }
+
+    .back-btn .codicon {
+      font-size: 13px;
+    }
+
+    .back-btn .back-label {
+      font-size: 11px;
+      font-weight: 500;
     }
 
     /* Native HTML button styling */
     button.button-primary,
     button.button-secondary {
-      width: 100%;
+      flex: 1;
       height: 32px;
       margin: 0;
       padding: 6px 12px;
@@ -1307,6 +1321,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
   <div class="header">
     <button class="back-btn" id="back-btn" title="Back to toolbox" aria-label="Back to main">
       <span class="codicon codicon-arrow-left"></span>
+      <span class="back-label">Back</span>
     </button>
     <h2>Settings</h2>
   </div>
@@ -1314,7 +1329,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
   <div class="settings-container">
     <!-- Header Configuration Section -->
     <section class="settings-section" role="region" aria-label="Header Configuration">
-      <h3 class="section-header">Header Configuration</h3>
+      <h3 class="section-header">Headers</h3>
 
       <div class="setting-row checkbox-row">
         <input type="checkbox" id="auto-insert" ${settings.autoInsertHeaders ? 'checked' : ''}>
@@ -1332,9 +1347,6 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
           value="${settings.defaultRequires}"
           placeholder="e.g., AutoHotkey v2.1"
           class="setting-control">
-        <div class="setting-description">
-          Version string for #Requires directive
-        </div>
       </div>
 
       <div class="setting-row">
@@ -1345,9 +1357,6 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
           <option value="Prompt" ${settings.defaultSingleInstance === 'Prompt' ? 'selected' : ''}>Prompt</option>
           <option value="Off" ${settings.defaultSingleInstance === 'Off' ? 'selected' : ''}>Off</option>
         </select>
-        <div class="setting-description">
-          Default #SingleInstance mode for new scripts
-        </div>
       </div>
     </section>
 
@@ -1355,7 +1364,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 
     <!-- Library Folders Section -->
     <section class="settings-section" role="region" aria-label="Library Folders">
-      <h3 class="section-header">Library Folders</h3>
+      <h3 class="section-header">Libraries</h3>
 
       <div class="setting-row">
         <label for="include-format" class="setting-label">Include Path Format</label>
@@ -1365,9 +1374,6 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
           value="${settings.includeFormat}"
           placeholder="Lib/{name}.ahk"
           class="setting-control">
-        <div class="setting-description">
-          Template for #Include paths. Use {name} as placeholder for package name
-        </div>
       </div>
 
       <div class="setting-row">
@@ -1378,16 +1384,13 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
           value="${settings.libFolders?.join(', ') || ''}"
           placeholder="Lib, vendor"
           class="setting-control">
-        <div class="setting-description">
-          Comma-separated list of library search folders (relative to workspace)
-        </div>
       </div>
     </section>
 
     <div class="divider"></div>
 
     <section class="settings-section" role="region" aria-label="GitHub API">
-      <h3 class="section-header">GitHub API</h3>
+      <h3 class="section-header">GitHub</h3>
 
       <div class="setting-row">
         <label for="github-token" class="setting-label">GitHub Token</label>
@@ -1516,7 +1519,7 @@ export class ToolboxSidebarProvider implements vscode.WebviewViewProvider {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; style-src ${webview.cspSource} 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'nonce-${scriptNonce}' ${webview.cspSource}; font-src ${webview.cspSource} https://cdn.jsdelivr.net;">
   <title>Edit Library</title>
   <link rel="stylesheet" href="${codiconsUri}">
   <script type="module" nonce="${scriptNonce}" src="${toolkitUri}"></script>

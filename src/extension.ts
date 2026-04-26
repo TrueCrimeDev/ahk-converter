@@ -24,6 +24,8 @@ import { ImportManager } from './import';
 import { registerMetadataQuickFix } from './metadataQuickFix';
 import { MetadataHoverProvider } from './metadataHoverProvider';
 import { ImportsGuidePanel } from './importsGuidePanel';
+import { registerConsoleDiagnostics } from './alphaBridge';
+import { registerDllCallProviders } from './dllcallProvider';
 
 type RunResult = { stdout: string; stderr: string; code: number };
 
@@ -829,6 +831,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }
   }, 2000);
 
+  // Register on-save interpreter diagnostics (ahk-console)
+  registerConsoleDiagnostics(ctx);
+  registerDllCallProviders(ctx);
+
   // Initialize Import Manager for AHK v2 module system
   const importManager = ImportManager.getInstance();
   await importManager.initialize(ctx);
@@ -851,6 +857,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       log.appendLine('[showMain] showMainView called');
     })
   );
+
 
   // Initialize Code Map Tree Provider
   const codeMapProvider = new FunctionTreeProvider(ctx);

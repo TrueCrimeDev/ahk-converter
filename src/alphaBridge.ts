@@ -1,468 +1,177 @@
 /**
- * Alpha Interpreter Bridge
+ * AHK Console Diagnostics
  *
- * Bridges the AutoHotkey Alpha interpreter with VS Code diagnostics.
- * Uses /ErrorStdOut=JSON for structured error output.
+ * Runs `AutoHotkey64.exe check /Diag=json <file>` on save and publishes
+ * structured diagnostics to the VS Code Problems panel.
+ *
+ * Source label: "ahk-console" — visually distinct from thqby's LSP
+ * diagnostics which show as "AutoHotkey2".
  *
  * @module alphaBridge
  */
 
+import { execFile } from 'child_process';
 import * as vscode from 'vscode';
-import * as path from 'path';
-import * as fs from 'fs';
-import * as cp from 'child_process';
 
-// Import helper classes
-import {
-    AlphaDiagnostic,
-    AlphaValidationResult,
-    AlphaConfig,
-    getProcessRunner,
-    getErrorParser,
-    getDiagnosticCache,
-    getConfigManager,
-    getDiagnosticAggregator
-} from './alpha';
+/** Shape of one JSON diagnostic line emitted on stderr by the interpreter. */
+interface AhkDiagnostic {
+    kind: string;
+    severity: 'error' | 'warning' | 'critical';
+    code: number;
+    message: string;
+    extra: string;
+    file: string;
+    line: number;
+    source: string;
+    stack: string;
+}
 
-// Re-export types for backwards compatibility
-export type { AlphaDiagnostic, AlphaValidationResult };
-
-/**
- * Configuration for the Alpha bridge (legacy interface)
- */
-export interface AlphaBridgeConfig {
-    interpreterPath: string;
-    timeout?: number;
-    encoding?: string;
+/** Resolve the AutoHotkey exe path from settings, falling back to PATH. */
+function getAhkExe(): string {
+    const cfg = vscode.workspace.getConfiguration('ahkConverter');
+    const configured = (cfg.get<string>('autoHotkeyV2Path') || '').replace(/"/g, '');
+    return configured || 'AutoHotkey64.exe';
 }
 
 /**
- * Alpha Interpreter Bridge class
- *
- * Provides integration between the AutoHotkey Alpha interpreter
- * and VS Code's diagnostic system.
+ * Shell out to the interpreter's `check` subcommand and collect diagnostics.
+ * Diagnostics arrive as one JSON object per line on stderr.
  */
-export class AlphaBridge {
-    private interpreterPath: string;
-    private timeout: number;
-    private encoding: string;
-    private diagnosticCollection: vscode.DiagnosticCollection;
-    private outputChannel: vscode.OutputChannel;
-
-    constructor(config: AlphaBridgeConfig) {
-        this.interpreterPath = config.interpreterPath;
-        this.timeout = config.timeout || 30000;
-        this.encoding = config.encoding || 'utf8';
-        this.diagnosticCollection = vscode.languages.createDiagnosticCollection('ahk-alpha');
-        this.outputChannel = vscode.window.createOutputChannel('AHK Alpha Bridge');
-    }
-
-    /**
-     * Validates a script file using the Alpha interpreter
-     *
-     * @param filePath - Path to the .ahk file to validate
-     * @returns Promise<AlphaValidationResult>
-     */
-    async validateFile(filePath: string): Promise<AlphaValidationResult> {
-        return new Promise((resolve, reject) => {
-            if (!fs.existsSync(this.interpreterPath)) {
-                reject(new Error(`Alpha interpreter not found: ${this.interpreterPath}`));
-                return;
-            }
-
-            if (!fs.existsSync(filePath)) {
-                reject(new Error(`Script file not found: ${filePath}`));
-                return;
-            }
-
-            const args = ['/ErrorStdOut=JSON', '/validate', filePath];
-
-            this.outputChannel.appendLine(`[Alpha] Validating: ${filePath}`);
-            this.outputChannel.appendLine(`[Alpha] Command: ${this.interpreterPath} ${args.join(' ')}`);
-
-            let stdout = '';
-            let stderr = '';
-
-            const proc = cp.spawn(this.interpreterPath, args, {
-                cwd: path.dirname(filePath),
-                windowsHide: true
-            });
-
-            proc.stdout.on('data', (data: Buffer) => {
-                stdout += data.toString();
-            });
-
-            proc.stderr.on('data', (data: Buffer) => {
-                stderr += data.toString();
-            });
-
-            const timeoutId = setTimeout(() => {
-                proc.kill();
-                reject(new Error(`Validation timed out after ${this.timeout}ms`));
-            }, this.timeout);
-
-            proc.on('close', (code: number | null) => {
-                clearTimeout(timeoutId);
-
-                // Alpha outputs JSON to stderr when using /ErrorStdOut=JSON
-                const output = stderr || stdout;
-
-                this.outputChannel.appendLine(`[Alpha] Exit code: ${code}`);
-                this.outputChannel.appendLine(`[Alpha] Output: ${output.substring(0, 500)}...`);
-
+function runCheck(filePath: string): Promise<AhkDiagnostic[]> {
+    return new Promise((resolve) => {
+        const exe = getAhkExe();
+        execFile(exe, ['check', '/Diag=json', filePath], { timeout: 10_000 }, (_err, _stdout, stderr) => {
+            const results: AhkDiagnostic[] = [];
+            const output = stderr || '';
+            for (const line of output.split('\n')) {
+                const trimmed = line.trim();
+                if (!trimmed || !trimmed.startsWith('{')) { continue; }
                 try {
-                    const result = this.parseJsonOutput(output);
-                    resolve(result);
-                } catch (parseError) {
-                    // Fallback: try to parse as traditional error format
-                    this.outputChannel.appendLine(`[Alpha] JSON parse failed, trying traditional format`);
-                    const fallbackResult = this.parseTraditionalOutput(output, filePath);
-                    resolve(fallbackResult);
-                }
-            });
-
-            proc.on('error', (err: Error) => {
-                clearTimeout(timeoutId);
-                reject(err);
-            });
-        });
-    }
-
-    /**
-     * Parse JSON format output from Alpha
-     */
-    private parseJsonOutput(output: string): AlphaValidationResult {
-        // Find the JSON object in the output
-        const jsonMatch = output.match(/\{[\s\S]*"errors"[\s\S]*\}/);
-        if (!jsonMatch) {
-            // If no errors, return empty result
-            return { errors: [], count: 0 };
-        }
-
-        const result = JSON.parse(jsonMatch[0]) as AlphaValidationResult;
-        return result;
-    }
-
-    /**
-     * Parse traditional error format as fallback
-     * Format: FILE (LINE) : ==> [Warning: ]ERROR_MESSAGE
-     */
-    private parseTraditionalOutput(output: string, defaultFile: string): AlphaValidationResult {
-        const errors: AlphaDiagnostic[] = [];
-        const lines = output.split('\n');
-
-        // Pattern: FILE (LINE) : ==> [Warning: ]MESSAGE
-        const errorPattern = /^(.+?)\s+\((\d+)\)\s*:\s*==>\s*(Warning:\s*)?(.+)$/;
-        const specificPattern = /^\s*Specifically:\s*(.+)$/;
-
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-            const match = line.match(errorPattern);
-
-            if (match) {
-                const [, file, lineNum, isWarning, message] = match;
-
-                const diagnostic: AlphaDiagnostic = {
-                    file: file || defaultFile,
-                    line: parseInt(lineNum, 10),
-                    column: 1,
-                    endLine: parseInt(lineNum, 10),
-                    endColumn: 1,
-                    severity: isWarning ? 'warning' : 'error',
-                    message: message.trim(),
-                    source: 'ahk-alpha'
-                };
-
-                // Check next line for "Specifically:" detail
-                if (i + 1 < lines.length) {
-                    const nextLine = lines[i + 1].trim();
-                    const specificMatch = nextLine.match(specificPattern);
-                    if (specificMatch) {
-                        diagnostic.extra = specificMatch[1];
-                        i++; // Skip the specifically line
+                    const parsed = JSON.parse(trimmed);
+                    if (parsed.kind === 'diagnostic') {
+                        results.push(parsed);
                     }
-                }
-
-                errors.push(diagnostic);
+                } catch { /* skip non-JSON lines */ }
             }
-        }
+            resolve(results);
+        });
+    });
+}
 
-        return {
-            errors,
-            count: errors.length
-        };
-    }
+/**
+ * High-value diagnostic patterns — things the interpreter catches that
+ * thqby's LSP TypeScript parser does NOT:
+ *
+ *  - #Requires version validation against the actual interpreter build
+ *  - DllCall type validation (invalid arg/return types at load time)
+ *  - Export/global conflicts in the module system
+ *  - Encoding warnings (non-UTF-8 files)
+ *
+ * NOT included (the LSP already catches these):
+ *  - #Import module-not-found
+ *  - Struct type annotations (LSP misreads them as variables, but still flags)
+ *  - Hotkey validation (invalid key names, duplicates, prefix rules)
+ *  - #Warn diagnostics (LocalSameAsGlobal, Unreachable, VarUnset)
+ *  - #Include missing files
+ *  - Basic syntax errors
+ *
+ * Errors and criticals are always surfaced — the LSP is unlikely to catch
+ * those anyway. Warnings are filtered to avoid duplicating what the LSP
+ * already reports.
+ */
+const HIGH_VALUE_PATTERNS = [
+    /#requires/i,
+    /invalid arg type/i,
+    /invalid return type/i,
+    /dllcall/i,
+    /UTF-8/i,
+    /encoding/i,
+    /export.*global/i,
+];
 
-    /**
-     * Convert Alpha diagnostics to VS Code diagnostics and update collection
-     */
-    updateDiagnostics(uri: vscode.Uri, result: AlphaValidationResult): void {
-        const diagnostics: vscode.Diagnostic[] = result.errors
-            .filter(e => this.normalizeFilePath(e.file) === this.normalizeFilePath(uri.fsPath))
-            .map(e => this.toDiagnostic(e));
+function isHighValue(diag: AhkDiagnostic): boolean {
+    // Errors and criticals always pass — those are real problems the LSP may miss
+    if (diag.severity === 'error' || diag.severity === 'critical') { return true; }
+    // Warnings only pass if they match an interpreter-specific pattern
+    const text = `${diag.message} ${diag.extra}`;
+    return HIGH_VALUE_PATTERNS.some(p => p.test(text));
+}
 
-        this.diagnosticCollection.set(uri, diagnostics);
-
-        this.outputChannel.appendLine(
-            `[Alpha] Updated ${diagnostics.length} diagnostics for ${path.basename(uri.fsPath)}`
-        );
-    }
-
-    /**
-     * Convert AlphaDiagnostic to vscode.Diagnostic
-     */
-    private toDiagnostic(d: AlphaDiagnostic): vscode.Diagnostic {
-        const range = new vscode.Range(
-            Math.max(0, d.line - 1), Math.max(0, d.column - 1),
-            Math.max(0, d.endLine - 1), Math.max(0, d.endColumn - 1 || 999)
-        );
-
-        const severity = this.toSeverity(d.severity);
-
-        let message = d.message;
-        if (d.extra) {
-            message += `\nSpecifically: ${d.extra}`;
-        }
-
-        const diagnostic = new vscode.Diagnostic(range, message, severity);
-        diagnostic.source = 'ahk-alpha';
-
-        // Add code for potential quick fixes
-        diagnostic.code = {
-            value: d.severity,
-            target: vscode.Uri.parse('https://www.autohotkey.com/docs/v2/')
-        };
-
-        return diagnostic;
-    }
-
-    /**
-     * Map severity string to VS Code DiagnosticSeverity
-     */
-    private toSeverity(severity: string): vscode.DiagnosticSeverity {
-        switch (severity) {
-            case 'error': return vscode.DiagnosticSeverity.Error;
-            case 'warning': return vscode.DiagnosticSeverity.Warning;
-            case 'info': return vscode.DiagnosticSeverity.Information;
-            case 'hint': return vscode.DiagnosticSeverity.Hint;
-            default: return vscode.DiagnosticSeverity.Error;
-        }
-    }
-
-    /**
-     * Normalize file path for comparison
-     */
-    private normalizeFilePath(filePath: string): string {
-        return path.normalize(filePath).toLowerCase();
-    }
-
-    /**
-     * Clear all diagnostics
-     */
-    clearDiagnostics(uri?: vscode.Uri): void {
-        if (uri) {
-            this.diagnosticCollection.delete(uri);
-        } else {
-            this.diagnosticCollection.clear();
-        }
-    }
-
-    /**
-     * Dispose resources
-     */
-    dispose(): void {
-        this.diagnosticCollection.dispose();
-        this.outputChannel.dispose();
+function mapSeverity(sev: string): vscode.DiagnosticSeverity {
+    switch (sev) {
+        case 'warning': return vscode.DiagnosticSeverity.Warning;
+        case 'critical': return vscode.DiagnosticSeverity.Error;
+        default: return vscode.DiagnosticSeverity.Error;
     }
 }
 
 /**
- * Alpha Bridge Diagnostic Provider
- *
- * Implements VS Code diagnostic provider using the Alpha interpreter
+ * Validate an AHK document and publish results to the diagnostic collection.
+ * Groups by file so errors in #Include'd files are attributed correctly.
  */
-export class AlphaDiagnosticProvider implements vscode.Disposable {
-    private bridge: AlphaBridge;
-    private disposables: vscode.Disposable[] = [];
-    private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
-    private debounceMs: number;
+async function validateDocument(
+    document: vscode.TextDocument,
+    collection: vscode.DiagnosticCollection,
+    channel: vscode.OutputChannel,
+): Promise<void> {
+    if (document.languageId !== 'ahk2' && !document.fileName.endsWith('.ahk')) { return; }
 
-    constructor(config: AlphaBridgeConfig, debounceMs: number = 500) {
-        this.bridge = new AlphaBridge(config);
-        this.debounceMs = debounceMs;
+    const timestamp = new Date().toLocaleTimeString();
+    channel.appendLine(`[${timestamp}] Checking: ${document.fileName}`);
+
+    const raw = await runCheck(document.fileName);
+
+    // Drop warnings the LSP already covers to avoid duplicate Problems entries
+    const diags = raw.filter(isHighValue);
+    for (const d of raw) {
+        const icon = d.severity === 'error' || d.severity === 'critical' ? 'x' : '!';
+        const detail = d.extra ? `: ${d.extra}` : '';
+        channel.appendLine(`  ${icon} L${d.line} [${d.severity}] ${d.message}${detail}`);
+    }
+    const filtered = raw.length - diags.length;
+    channel.appendLine(`  ${raw.length} total, ${diags.length} surfaced, ${filtered} filtered (LSP covers)`);
+    if (raw.length === 0) {
+        channel.appendLine('  OK No issues found');
     }
 
-    /**
-     * Register the diagnostic provider for AHK documents
-     */
-    register(): vscode.Disposable[] {
-        // Validate on document open
-        this.disposables.push(
-            vscode.workspace.onDidOpenTextDocument(doc => this.onDocument(doc))
-        );
+    // Group by file — check can report errors in #Include'd files
+    const byFile = new Map<string, vscode.Diagnostic[]>();
 
-        // Validate on document save
-        this.disposables.push(
-            vscode.workspace.onDidSaveTextDocument(doc => this.onDocument(doc))
-        );
+    for (const d of diags) {
+        const uri = d.file || document.fileName;
+        if (!byFile.has(uri)) { byFile.set(uri, []); }
 
-        // Validate on document change (debounced)
-        this.disposables.push(
-            vscode.workspace.onDidChangeTextDocument(e => this.onDocumentChange(e))
-        );
+        const line = Math.max(0, d.line - 1); // AHK 1-indexed → VS Code 0-indexed
+        const range = new vscode.Range(line, 0, line, Number.MAX_SAFE_INTEGER);
 
-        // Clear diagnostics when document closes
-        this.disposables.push(
-            vscode.workspace.onDidCloseTextDocument(doc => {
-                if (this.isAhkDocument(doc)) {
-                    this.bridge.clearDiagnostics(doc.uri);
-                }
-            })
-        );
+        const msg = d.extra ? `${d.message}: ${d.extra}` : d.message;
+        const diagnostic = new vscode.Diagnostic(range, msg, mapSeverity(d.severity));
+        diagnostic.source = 'ahk-console';
 
-        // Validate all open AHK documents
-        vscode.workspace.textDocuments.forEach(doc => this.onDocument(doc));
-
-        return this.disposables;
+        byFile.get(uri)!.push(diagnostic);
     }
 
-    /**
-     * Check if document is an AHK file
-     */
-    private isAhkDocument(doc: vscode.TextDocument): boolean {
-        return doc.languageId === 'ahk2' ||
-               doc.languageId === 'ahk' ||
-               doc.fileName.endsWith('.ahk');
-    }
-
-    /**
-     * Handle document open/save
-     */
-    private async onDocument(doc: vscode.TextDocument): Promise<void> {
-        if (!this.isAhkDocument(doc)) return;
-
-        try {
-            const result = await this.bridge.validateFile(doc.uri.fsPath);
-            this.bridge.updateDiagnostics(doc.uri, result);
-        } catch (error) {
-            console.error('[Alpha Bridge] Validation error:', error);
-        }
-    }
-
-    /**
-     * Handle document change (debounced)
-     */
-    private onDocumentChange(e: vscode.TextDocumentChangeEvent): void {
-        if (!this.isAhkDocument(e.document)) return;
-
-        const key = e.document.uri.toString();
-
-        // Clear existing timer
-        const existing = this.debounceTimers.get(key);
-        if (existing) {
-            clearTimeout(existing);
-        }
-
-        // Set new debounced timer
-        const timer = setTimeout(() => {
-            this.debounceTimers.delete(key);
-            this.onDocument(e.document);
-        }, this.debounceMs);
-
-        this.debounceTimers.set(key, timer);
-    }
-
-    /**
-     * Manually trigger validation for a document
-     */
-    async validateDocument(doc: vscode.TextDocument): Promise<AlphaValidationResult | undefined> {
-        if (!this.isAhkDocument(doc)) return undefined;
-
-        try {
-            const result = await this.bridge.validateFile(doc.uri.fsPath);
-            this.bridge.updateDiagnostics(doc.uri, result);
-            return result;
-        } catch (error) {
-            console.error('[Alpha Bridge] Validation error:', error);
-            return undefined;
-        }
-    }
-
-    /**
-     * Get the underlying bridge instance
-     */
-    getBridge(): AlphaBridge {
-        return this.bridge;
-    }
-
-    /**
-     * Dispose all resources
-     */
-    dispose(): void {
-        this.disposables.forEach(d => d.dispose());
-        this.debounceTimers.forEach(t => clearTimeout(t));
-        this.debounceTimers.clear();
-        this.bridge.dispose();
+    // Clear previous and set new
+    collection.clear();
+    for (const [filePath, fileDiags] of byFile) {
+        collection.set(vscode.Uri.file(filePath), fileDiags);
     }
 }
 
 /**
- * Detect Alpha interpreter path
- *
- * Searches common locations for the Alpha.exe interpreter
+ * Register the on-save diagnostic provider.
+ * Call once from `activate()` and push the returned disposable into
+ * `context.subscriptions`.
  */
-export function detectAlphaPath(): string | undefined {
-    const possiblePaths = [
-        // Workspace-relative
-        path.join(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', 'bin', 'Alpha.exe'),
-        // User Documents
-        path.join(process.env.USERPROFILE || '', 'Documents', 'AutoHotkey', 'Alpha', 'Alpha.exe'),
-        // Program Files
-        path.join(process.env.PROGRAMFILES || '', 'AutoHotkey', 'Alpha', 'Alpha.exe'),
-        path.join(process.env['PROGRAMFILES(X86)'] || '', 'AutoHotkey', 'Alpha', 'Alpha.exe'),
-        // Common development paths
-        path.join(process.env.USERPROFILE || '', 'Documents', 'Design', 'Coding', 'AHK_v2a', 'bin', 'Alpha.exe'),
-    ];
+export function registerConsoleDiagnostics(context: vscode.ExtensionContext): vscode.Disposable {
+    const collection = vscode.languages.createDiagnosticCollection('ahk-console');
+    const channel = vscode.window.createOutputChannel('AHK Console Diagnostics');
 
-    for (const p of possiblePaths) {
-        if (fs.existsSync(p)) {
-            return p;
-        }
-    }
-
-    return undefined;
-}
-
-/**
- * Create and register the Alpha diagnostic provider
- *
- * @param context - VS Code extension context
- * @param interpreterPath - Optional path to Alpha.exe (auto-detected if not provided)
- * @returns The diagnostic provider instance or undefined if Alpha not found
- */
-export function createAlphaDiagnosticProvider(
-    context: vscode.ExtensionContext,
-    interpreterPath?: string
-): AlphaDiagnosticProvider | undefined {
-    const alphaPath = interpreterPath || detectAlphaPath();
-
-    if (!alphaPath) {
-        vscode.window.showWarningMessage(
-            'Alpha interpreter not found. Set the path in settings to enable interpreter-based diagnostics.'
-        );
-        return undefined;
-    }
-
-    const provider = new AlphaDiagnosticProvider({
-        interpreterPath: alphaPath,
-        timeout: 30000
+    const onSave = vscode.workspace.onDidSaveTextDocument((doc) => {
+        validateDocument(doc, collection, channel);
     });
 
-    const disposables = provider.register();
-    context.subscriptions.push(...disposables);
-    context.subscriptions.push(provider);
-
-    vscode.window.showInformationMessage(`AHK Alpha Bridge: Using interpreter at ${alphaPath}`);
-
-    return provider;
+    const disposable = vscode.Disposable.from(collection, onSave, channel);
+    context.subscriptions.push(disposable);
+    return disposable;
 }

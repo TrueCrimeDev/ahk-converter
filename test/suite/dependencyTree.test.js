@@ -3,8 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const assert = require("assert");
 const vscode = require("vscode");
 const dependencyTreeProvider_1 = require("../../dist/src/dependencyTreeProvider");
+const manifest = require("../../package.json");
 suite('Dependency Tree Test Suite', () => {
-    const extensionId = 'TrueCrimeAudit.ahk-converter';
+    const extensionId = `${manifest.publisher}.${manifest.name}`;
     let provider;
     let context;
     suiteSetup(() => {

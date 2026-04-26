@@ -1,9 +1,10 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { DependencyTreeProvider, DependencyTreeItem } from '../../src/dependencyTreeProvider';
+const manifest = require('../../package.json');
 
 suite('Dependency Tree Test Suite', () => {
-  const extensionId = 'TrueCrimeAudit.ahk-converter';
+  const extensionId = `${manifest.publisher}.${manifest.name}`;
   let provider: DependencyTreeProvider;
   let context: vscode.ExtensionContext;
 
