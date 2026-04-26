@@ -57,5 +57,7 @@ tsconfig.json
 !CHANGELOG.md
 **/*.map
 **/*.ts
+.vsix-list*.txt
+Testing.html
 
 

@@ -1,6 +1,8 @@
 dist
 node_modules
 *.vsix
+.vsix-list*.txt
+Testing.html
 
 # IDE/Editor files
 .history/
