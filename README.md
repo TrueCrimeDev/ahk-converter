@@ -1,16 +1,14 @@
 <p align="center">
+  <kbd>Convert AHK</kbd> · <kbd>Library Mapping</kbd> · <kbd>Import Libraries</kbd>
+</p>
+
+
+<p align="center">
   <img src="media/converter.png" alt="AHK Converter icon" width="112" />
 </p>
 
 <h1 align="center">AHK Converter</h1>
 
-<p align="center">
-  <strong>Convert AutoHotkey v1 scripts to v2, inspect dependencies, manage libraries, and get AHK-aware Copilot help inside VS Code.</strong>
-</p>
-
-<p align="center">
-  <kbd>VS Code 1.84+</kbd> <kbd>AHK v1 → v2</kbd> <kbd>MIT</kbd>
-</p>
 
 <p align="center">
   <a href="https://marketplace.visualstudio.com/items?itemName=TrueCrimeAudit.ahk-converter"><img alt="VS Code Marketplace" src="https://img.shields.io/visual-studio-marketplace/v/TrueCrimeAudit.ahk-converter?label=Marketplace&color=007ACC"></a>
