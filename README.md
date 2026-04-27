@@ -9,18 +9,12 @@
 </p>
 
 <p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=TrueCrimeAudit.ahk-converter"><img alt="VS Code Marketplace" src="https://img.shields.io/visual-studio-marketplace/v/TrueCrimeAudit.ahk-converter?label=Marketplace&color=007ACC"></a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=TrueCrimeAudit.ahk-converter"><img alt="Installs" src="https://img.shields.io/visual-studio-marketplace/i/TrueCrimeAudit.ahk-converter?color=2ea043"></a>
-  <img alt="AutoHotkey v2" src="https://img.shields.io/badge/AutoHotkey-v1%20%E2%86%92%20v2-334455">
-  <img alt="VS Code" src="https://img.shields.io/badge/VS%20Code-1.84%2B-007ACC">
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-6f42c1">
+  <kbd>VS Code 1.84+</kbd> <kbd>AHK v1 → v2</kbd> <kbd>MIT</kbd>
 </p>
 
 <p align="center">
-  <img alt="VS Code Extension" title="Runs inside Visual Studio Code" src="https://img.shields.io/badge/VS%20Code-Extension-007ACC?style=for-the-badge">
-  <img alt="AHK v1 to v2" title="Convert AutoHotkey v1 scripts to v2" src="https://img.shields.io/badge/AHK-v1%20%E2%86%92%20v2-111111?style=for-the-badge">
-  <img alt="Dependency Map" title="Map #Include relationships and unresolved dependencies" src="https://img.shields.io/badge/Dependency-Map-2ea043?style=for-the-badge">
-  <img alt="Copilot Chat" title="Ask the @ahk Copilot Chat participant for conversion, fixes, and examples" src="https://img.shields.io/badge/Copilot-Chat-6f42c1?style=for-the-badge">
+  <a href="https://marketplace.visualstudio.com/items?itemName=TrueCrimeAudit.ahk-converter"><img alt="VS Code Marketplace" src="https://img.shields.io/visual-studio-marketplace/v/TrueCrimeAudit.ahk-converter?label=Marketplace&color=007ACC"></a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=TrueCrimeAudit.ahk-converter"><img alt="Installs" src="https://img.shields.io/visual-studio-marketplace/i/TrueCrimeAudit.ahk-converter?color=2ea043"></a>
 </p>
 
 ---
@@ -35,32 +29,11 @@ AHK Converter started as a focused AutoHotkey v1-to-v2 conversion tool. It now a
 
 ## Highlights
 
-<p>
-  <img alt="New tab conversion" title="Open converted v2 output in a new tab" src="https://img.shields.io/badge/New%20Tab-Conversion-334455">
-  <img alt="Replace file conversion" title="Replace the current file after conversion" src="https://img.shields.io/badge/Replace-Current%20File-334455">
-  <img alt="Diff review" title="Review v1 and v2 output side by side before accepting" src="https://img.shields.io/badge/Review-Diff-334455">
-  <img alt="Batch conversion" title="Convert multiple AHK scripts in one workflow" src="https://img.shields.io/badge/Batch-Conversion-334455">
-</p>
-
-<p>
-  <img alt="AHK sidebar" title="Activity bar sidebar with Toolbox, Dependency Manager, Code Map, and Dependency Map" src="https://img.shields.io/badge/AHK-Sidebar-007ACC">
-  <img alt="Code Map" title="Browse functions, classes, methods, variables, and hotkeys" src="https://img.shields.io/badge/Code-Map-007ACC">
-  <img alt="Package search" title="Search and install AHK v2 libraries" src="https://img.shields.io/badge/Package-Search-007ACC">
-  <img alt="Quick include" title="Insert #Include lines from installed or local libraries" src="https://img.shields.io/badge/Quick-%23Include-007ACC">
-</p>
-
-<p>
-  <img alt="Interpreter diagnostics" title="Surface AutoHotkey v2 interpreter checks in VS Code Problems" src="https://img.shields.io/badge/Console-Diagnostics-2ea043">
-  <img alt="DllCall signatures" title="Signature help for common Windows API DllCall patterns" src="https://img.shields.io/badge/DllCall-Signatures-2ea043">
-  <img alt="Function metadata" title="Generate richer docs and metadata for AHK functions and libraries" src="https://img.shields.io/badge/Function-Metadata-2ea043">
-  <img alt="Library attribution" title="Discover and fill missing library metadata" src="https://img.shields.io/badge/Library-Attribution-2ea043">
-</p>
-
-<p>
-  <img alt="@ahk convert" title="Ask @ahk to convert v1 snippets and explain the migration" src="https://img.shields.io/badge/@ahk-convert-6f42c1">
-  <img alt="@ahk fix" title="Ask @ahk to analyze Problems diagnostics and likely AHK v2 issues" src="https://img.shields.io/badge/@ahk-fix-6f42c1">
-  <img alt="@ahk workspace" title="Ask @ahk for code map and dependency context" src="https://img.shields.io/badge/@ahk-workspace-6f42c1">
-  <img alt="@ahk examples" title="Ask @ahk for focused AHK v2 examples" src="https://img.shields.io/badge/@ahk-examples-6f42c1">
+<p align="center">
+  <kbd>New Tab</kbd> <kbd>Replace File</kbd> <kbd>Diff Review</kbd> <kbd>Batch</kbd><br>
+  <kbd>AHK Sidebar</kbd> <kbd>Code Map</kbd> <kbd>Package Search</kbd> <kbd>Quick #Include</kbd><br>
+  <kbd>Console Diagnostics</kbd> <kbd>DllCall Signatures</kbd> <kbd>Function Metadata</kbd> <kbd>Library Attribution</kbd><br>
+  <kbd>@ahk /convert</kbd> <kbd>@ahk /fix</kbd> <kbd>@ahk /workspace</kbd> <kbd>@ahk /examples</kbd>
 </p>
 
 ## Quick Start
